@@ -1,0 +1,5 @@
+<map name="OpenStreetMap" type="geocentric" version="2" >
+    <image name="osm_mapnik" driver="xyz" >
+        <url>http://[abc].tile.openstreetmap.org/{z}/{x}/{y}.png</url>
+    </image>
+</map>
