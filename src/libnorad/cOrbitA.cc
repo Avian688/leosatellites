@@ -6,7 +6,7 @@
 // mfh 11/15/2003
 //-----------------------------------------------------
 
-#include "libnorad/cOrbitA.h"
+#include "cOrbitA.h"
 
 #include <cmath>
 #include <ctime>

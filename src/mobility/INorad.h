@@ -13,8 +13,8 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 //
 
-#ifndef LEOSATELLITES_MOBILITY_NORADA_H_
-#define LEOSATELLITES_MOBILITY_NORADA_H_
+#ifndef LEOSATELLITES_MOBILITY_INORAD_H_
+#define LEOSATELLITES_MOBILITY_INORAD_H_
 
 #include <omnetpp.h>
 
@@ -24,12 +24,11 @@
 #include "libnorad/cEci.h"
 #include "libnorad/cJulian.h"
 #include "libnorad/ccoord.h"
-#include "INorad.h"
+
 using namespace omnetpp;
-class cOrbitA;
 
 //-----------------------------------------------------
-// Class: NoradA
+// Class: INorad
 //
 // Provides the functionality for satellite positioning
 // this class provides the functionality needed to get the positions for satellites according
@@ -38,39 +37,51 @@ class cOrbitA;
 // requirement of a TLE file.
 // Written by Aiden Valentine
 //-----------------------------------------------------
-class NoradA : public INorad
+class INorad : public cSimpleModule
 {
 public:
-    NoradA();
-    // Updates the end time of current linear movement for calculation of current position
-    // targetTime: End time of current linear movement
-    virtual void updateTime(const simtime_t& targetTime);
 
-    virtual void finish();
+    virtual cJulian getJulian(){return currentJulian;};
+    // sets the internal calendar by translating the current gregorian time
+    // currentTime: time at which the simulation takes place
+    virtual void setJulian(std::tm* currentTime);
+
+    virtual void updateTime(const simtime_t& targetTime){};
+
     // This method gets the current simulation time, cares for the file download (happens only once)
     // of the TLE files from the web and reads the values for the satellites according to the
     // omnet.ini-file. The information is provided by the respective mobility class.
     // targetTime: End time of current linear movement
-    virtual void initializeMobility(const simtime_t& targetTime);
+    virtual void initializeMobility(const simtime_t& targetTime){};
 
-    double getRaan();
-    double getInclination();
+    // returns the longitude
+    virtual double getLongitude();
 
-    const int getSatelliteNumber(){return satelliteIndex;};
-    const int getNumberOfPlanes(){return planes;}
-    const int getSatellitesPerPlane(){return satPerPlane;}
-    // Checks if given an index the satellite is a valid inter-satellite link.
-    bool isInterSatelliteLink(const int sat2Index);
+    // returns the latitude
+    virtual double getLatitude();
 
-private:
+    // returns the elevation to a reference point
+    virtual double getElevation(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 
-    int satelliteIndex;
-    int planes;
-    int satPerPlane;
-    double inclination; //inclination and raan used to determine orbital plane
-    double raan;
+    // returns the azimuth
+    virtual double getAzimuth(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 
-    cOrbitA* orbit;
+    // returns the altitude
+    virtual double getAltitude();
+
+
+    // returns the distance to the satellite from a reference point (distance in km)
+    virtual double getDistance(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
+
+protected:
+    virtual void handleMessage(cMessage* msg);
+
+protected:
+    cEci eci;
+    cJulian currentJulian;
+
+    double gap;
+    cCoordGeo geoCoord;
 };
 
 #endif

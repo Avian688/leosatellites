@@ -328,7 +328,6 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                     if(enableInterSatelliteLinksParameter){
                         NoradA *sourceNoradModule = dynamic_cast<NoradA*>(sourceModule->getSubmodule("NoradModule", 0));
                         NoradA *destNoradModule = dynamic_cast<NoradA*>(destModule->getSubmodule("NoradModule", 0));
-                        const int satNum1 = sourceNoradModule->getSatelliteNumber();
                         const int satNum2 = destNoradModule->getSatelliteNumber();
                         bool validLink = false;
                         //if the satellites are part of the same phase - check inter-satellite links

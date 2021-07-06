@@ -1,16 +1,15 @@
-
 package leosatellites.base;
 
 import inet.mobility.contract.IMobility;
-import leosatellites.mobility.NoradA;
+import leosatellites.mobility.NoradTLE;
 import inet.node.inet.WirelessHost;
 import inet.node.inet.AdhocHost;
 import inet.node.inet.StandardHost;
 
-// Laser Satellite model that uses the NoradA implementation, which therefore allows the use of inter-satellite links.
+// Basic Satellite model that uses the NoradTLE implementation, which does not allow the use of inter-satellite links; only ground relaying.
 //
 //
-module LaserSatellite extends WirelessHost
+module BasicSatellite extends WirelessHost
 {
     parameters:
         @node; //because of MobilityBase initialization
@@ -26,7 +25,7 @@ module LaserSatellite extends WirelessHost
         //     @display("p=194,103");
         //}
         
-        NoradModule: NoradA { // Module for transformation between omnet and libNorad
+        NoradModule: NoradTLE { // Module for transformation between omnet and libNorad
             parameters:
                 @display("p=98,35");
         }

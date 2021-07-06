@@ -1,15 +1,15 @@
-file 5813 1625477192                                            
+file 35625 1625501011                                           
 version 2
-run Experiment-Image-0-20210705-10:25:10-3193
+run Experiment-Image-0-20210705-17:03:19-50642
 attr configname Experiment-Image
-attr datetime 20210705-10:25:10
+attr datetime 20210705-17:03:19
 attr experiment Experiment-Image
 attr inifile omnetpp.ini
 attr iterationvars ""
 attr iterationvarsf ""
 attr measurement ""
 attr network SatSGP4
-attr processid 3193
+attr processid 50642
 attr repetition 0
 attr replication #0
 attr resultdir results
@@ -17,7 +17,7 @@ attr runnumber 0
 attr seedset 0
 param SatSGP4.satellite[*].mobility.updateInterval 1s
 param SatSGP4.configurator.updateInterval 20000s
-param **.numOfSats 800
+param **.numOfSats 80
 param **.numOfMCCs 2
 param *.satellite[*].NoradModule.satName "\"sat\""
 param *.satellite[*].NoradModule.planes 24
@@ -119,14 +119,5 @@ param SatSGP4.MCC[6].cityName "\"Litchfield\""
 vector 0 SatSGP4.MCC[0].app[0] pingTxSeq:vector ETV
 attr interpolationmode none
 attr title "ping tx seq, vector"
-vector 1 SatSGP4.MCC[0].app[0] pingRxSeq:vector ETV
-attr interpolationmode none
-attr title "ping rx seq, vector"
-vector 2 SatSGP4.MCC[0].app[0] rtt:vector ETV
-attr interpolationmode none
-attr title "ping round-trip time, vector"
-attr unit s
-0	5668 24 801 33528 0 0.5 2 0 1 1 1
-1	5692 48 15043 47769 0.05019189005 0.55019189005 2 0 1 1 1
-2	5740 72 15043 47769 0.05019189005 0.55019189005 2 0.05019189005 0.05019189005 0.1003837801 0.0050384516535826
+0	5428 30196 81 74172 0 882.5 1766 0 1765 1558495 1834348615
 

@@ -7,7 +7,7 @@ package leosatellites.mobility;
 // of any constellation not bounded by a TLE file. All of the Keplerian parameters
 // below are representative of an average of some Starlink satellites. These can be easily
 // adapted depending on the objective of the simulation.
-simple NoradA
+simple NoradA like INorad
 {
 parameters:
     int satIndex;

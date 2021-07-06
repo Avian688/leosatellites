@@ -20,7 +20,7 @@
 #include <fstream>
 
 #include "libnorad/cTLE.h"
-#include "libnorad/cOrbitA.h"
+#include "../libnorad/cOrbitA.h"
 #include "libnorad/cSite.h"
 
 using namespace omnetpp;
@@ -42,6 +42,16 @@ void NoradA::finish()
 {
     delete orbit;
 }
+
+/**
+ * Update the orbit given a target time.
+ */
+void NoradA::updateTime(const simtime_t& targetTime)
+{
+    orbit->getPosition((gap + targetTime.dbl()) / 60, &eci);
+    geoCoord = eci.toGeo();
+}
+
 
 void NoradA::initializeMobility(const simtime_t& targetTime)
 {
@@ -65,39 +75,11 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
 
     //The new cOrbitA orbital propagator class is called which passes these Keplerian elements rather than the TLE file.
     orbit = new cOrbitA(satNameA, epochY, epochD, mMotion, ecc, incl, meanAnom, bstarA, dragA, satIndex, planes, satPerPlane);
-    raan = orbit->RAAN();
-    inclination = orbit->Inclination();
 
     // Gap is needed to eliminate different start times
     gap = orbit->TPlusEpoch(currentJulian);
-
     updateTime(targetTime);
 
-}
-
-/**
- * Update the orbit given a target time.
- */
-void NoradA::updateTime(const simtime_t& targetTime)
-{
-    orbit->getPosition((gap + targetTime.dbl()) / 60, &eci);
-    geoCoord = eci.toGeo();
-}
-
-/**
- * Return longitude of the node.
- */
-double NoradA::getLongitude()
-{
-    return rad2deg(geoCoord.m_Lon);
-}
-
-/**
- * Return latitude of the node.
- */
-double NoradA::getLatitude()
-{
-    return rad2deg(geoCoord.m_Lat);
 }
 
 /**
@@ -114,49 +96,6 @@ double NoradA::getRaan()
 double NoradA::getInclination()
 {
     return inclination;
-}
-
-double NoradA::getElevation(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    cSite siteEquator(refLatitude, refLongitude, refAltitude);
-    cCoordTopo topoLook = siteEquator.getLookAngle(eci);
-    if (topoLook.m_El == 0.0) {
-        error("Error in Norad::getElevation(): Corrupted database.");
-    }
-    return rad2deg(topoLook.m_El);
-}
-
-/**
- * Get the azimuth or the satellite. This is an angular measurement used in spherical coordinate systems.
- */
-double NoradA::getAzimuth(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    cSite siteEquator(refLatitude, refLongitude, refAltitude);
-    cCoordTopo topoLook = siteEquator.getLookAngle(eci);
-    if (topoLook.m_El == 0.0) {
-        error("Error in Norad::getAzimuth(): Corrupted database.");
-    }
-    return rad2deg(topoLook.m_Az);
-}
-
-/**
- * Get the altitude of a node.
- */
-double NoradA::getAltitude()
-{
-    geoCoord = eci.toGeo();
-    return geoCoord.m_Alt;
-}
-
-/**
- * Get the straight-line distance between the satellite and coordinates.
- */
-double NoradA::getDistance(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    cSite siteEquator(refLatitude, refLongitude, refAltitude);
-    cCoordTopo topoLook = siteEquator.getLookAngle(eci);
-    double distance = topoLook.m_Range;
-    return distance;
 }
 
 /**
@@ -190,19 +129,5 @@ bool NoradA::isInterSatelliteLink(const int sat2Index)
         }
     }
     return false;
-}
-
-void NoradA::handleMessage(cMessage* msg)
-{
-    error("Error in Norad::handleMessage(): This module is not able to handle messages.");
-}
-
-void NoradA::setJulian(std::tm* currentTime)
-{
-    currentJulian = cJulian(currentTime->tm_year + 1900,
-                            currentTime->tm_mon + 1,
-                            currentTime->tm_mday,
-                            currentTime->tm_hour,
-                            currentTime->tm_min, 0);
 }
 

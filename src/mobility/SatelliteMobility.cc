@@ -19,6 +19,7 @@
 #include <ctime>
 #include <cmath>
 
+#include "INorad.h"
 #include "NoradA.h"
 
 Define_Module(SatelliteMobility);
@@ -39,7 +40,7 @@ void SatelliteMobility::initialize(int stage)
     }
     LineSegmentsMobilityBase::initialize(stage);
 
-    noradModule = check_and_cast< NoradA* >(getParentModule()->getSubmodule("NoradModule"));
+    noradModule = check_and_cast< INorad* >(getParentModule()->getSubmodule("NoradModule"));
     if (noradModule == nullptr) {
         error("Error in SatSGP4Mobility::initializeMobility(): Cannot find module Norad.");
     }
@@ -47,7 +48,7 @@ void SatelliteMobility::initialize(int stage)
     //std::time_t timestamp = std::time(nullptr);       // get current time as an integral value holding the num of secs
     std::time_t timestamp =  1619119189;  //8:20PM 22/04/2021                                             // since 00:00, Jan 1 1970 UTC
     std::tm* currentTime = std::gmtime(&timestamp);   // convert timestamp into structure holding a calendar date and time
-    noradModule->setJulian(currentTime);
+    noradModule->INorad::setJulian(currentTime);
 
     mapX = std::atoi(getParentModule()->getParentModule()->getDisplayString().getTagArg("bgb", 0));
     mapY = std::atoi(getParentModule()->getParentModule()->getDisplayString().getTagArg("bgb", 1));
@@ -60,14 +61,17 @@ void SatelliteMobility::initialize(int stage)
 
 bool SatelliteMobility::isOnSameOrbitalPlane(double raan2, double inclination2)
 {
-    bool samePlane = false;
-    double raan = getRaan();
-    double inclination = getInclination();
-    if((inclination == inclination2) && (raan == raan2))
-    {
-        return true;
+    if(NoradA *noradAModule = dynamic_cast<NoradA*>(noradModule)){
+        double raan = noradAModule->getRaan();
+        double inclination = noradAModule->getInclination();
+        if((inclination == inclination2) && (raan == raan2))
+        {
+            return true;
+        }
     }
-    return false;
+    else {
+        return false;
+    }
 }
 
 double SatelliteMobility::getAltitude() const
@@ -101,16 +105,6 @@ double SatelliteMobility::getLongitude() const
 double SatelliteMobility::getLatitude() const
 {
     return noradModule->getLatitude();
-}
-
-double SatelliteMobility::getRaan() const
-{
-    return noradModule->getRaan();
-}
-
-double SatelliteMobility::getInclination() const
-{
-    return noradModule->getInclination();
 }
 
 void SatelliteMobility::setTargetPosition()

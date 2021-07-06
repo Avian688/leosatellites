@@ -1,6 +1,6 @@
 package leosatellites.simulations.SatSGP4;
 
-import os3.base.Satellite;
+import leosatellites.base.BasicSatellite;
 import leosatellites.base.LaserSatellite;
 import leosatellites.base.GroundStation;
 import os3.base.MissionControlCenter;

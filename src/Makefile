@@ -30,7 +30,9 @@ OBJS = \
     $O/libnorad/cNoradSGP4A.o \
     $O/libnorad/cOrbitA.o \
     $O/mobility/GroundStationMobility.o \
+    $O/mobility/INorad.o \
     $O/mobility/NoradA.o \
+    $O/mobility/NoradTLE.o \
     $O/mobility/SatelliteMobility.o \
     $O/networklayer/configurator/ipv4/MatcherOS3.o \
     $O/networklayer/configurator/ipv4/SatelliteNetworkConfigurator.o \

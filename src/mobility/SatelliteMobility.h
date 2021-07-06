@@ -18,8 +18,7 @@
 
 
 #include <inet/mobility/base/LineSegmentsMobilityBase.h>
-#include "NoradA.h"
-class NoradA;
+#include "INorad.h"
 
 //-----------------------------------------------------
 // Class: SatSGP4Mobility
@@ -42,8 +41,6 @@ public:
     // returns the altitude of the satellite.
     virtual double getAltitude() const;
 
-    virtual double getRaan() const;      //raan and inclination required to determine orbital plane of a satellite - used for intersatellite links
-    virtual double getInclination() const;
     virtual bool isOnSameOrbitalPlane(double raan, double inclination);
     // returns the elevation for the satellite in degrees
     virtual double getElevation(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999) const;
@@ -61,7 +58,7 @@ public:
     virtual double getLongitude() const;
 
 protected:
-    NoradA* noradModule;
+    INorad* noradModule;
     int mapX, mapY;
     double transmitPower;
 
