@@ -10,17 +10,6 @@ cd $HOME/omnetpp-5.6.2
 
 . setenv
 
-<<<<<<< HEAD
-# then, the working directory is set to the /src/ folder of the leosatellites project.
-
-cd $HOME/omnetpp-5.6.2/samples/leosatellites/src
-
-# note that depending on how inet is installed, it may appear as inet or inet4 (we use inet here) # this command generates the makefile. Make sure that the paths are correct for INET (the INET_PROJ variable) and OS3 (the OS3_PROJ variable).
-
-opp_makemake --make-so -f --deep -O out -KINET_PROJ=$HOME/omnetpp-5.6.2/samples/inet -KOS3_PROJ=$HOME/omnetpp-5.6.2/samples/os3 -DINET_IMPORT '-I$(OS3_PROJ)/src' '-I$(INET_PROJ)/src' -I/usr/include/curl '-L$(INET_PROJ)/src' '-L$(OS3_PROJ)/src' '-lINET$(D)' '-los3$(D)'
-
-# this command builds the shared library for leosatellites
-=======
 \# then, the working directory is set to the /src/ folder of the leosatellites project.
 
 cd $HOME/omnetpp-5.6.2/samples/leosatellites/src
@@ -30,7 +19,6 @@ cd $HOME/omnetpp-5.6.2/samples/leosatellites/src
 opp_makemake --make-so -f --deep -O out -KINET_PROJ=$HOME/omnetpp-5.6.2/samples/inet -KOS3_PROJ=$HOME/omnetpp-5.6.2/samples/os3 -DINET_IMPORT '-I$(OS3_PROJ)/src' '-I$(INET_PROJ)/src' -I/usr/include/curl '-L$(INET_PROJ)/src' '-L$(OS3_PROJ)/src' '-lINET$(D)' '-los3$(D)'
 
 \# this command builds the shared library for leosatellites
->>>>>>> c4452b28989374efc8e51cb4eb711fe6456c5717
 
 make MODE=release && make MODE=debug
 
@@ -38,18 +26,10 @@ Simulations can now be run, by first changing to the directory of the respective
 
 cd $HOME/omnetpp-5.6.2/samples/leosatellites/simulations/SatSGP4
 
-<<<<<<< HEAD
-# to run in debug mode
-
-opp_run_dbg -m -u Qtenv -c Experiment-Image -n $HOME/omnetpp-5.6.2/samples/leosatellites/src:..:$HOME/omnetpp-5.6.2/samples/inet/src:$HOME/omnetpp-5.6.2/samples/inet/examples:$HOME/omnetpp-5.6.2/samples/inet/tutorials:$HOME/omnetpp-5.6.2/samples/inet/showcases:$HOME/omnetpp-5.6.2/samples/os3/simulations:$HOME/omnetpp-5.6.2/samples/os3/src --image-path=$HOME/omnetpp-5.6.2/samples/inet/images:$HOME/omnetpp-5.6.2/samples/os3/images -l $HOME/omnetpp-5.6.2/samples/leosatellites/src/leosatellites omnetpp.ini
-
-# to run in release mode
-=======
 \# to run in debug mode
 
 opp_run_dbg -m -u Qtenv -c Experiment-Image -n $HOME/omnetpp-5.6.2/samples/leosatellites/src:..:$HOME/omnetpp-5.6.2/samples/inet/src:$HOME/omnetpp-5.6.2/samples/inet/examples:$HOME/omnetpp-5.6.2/samples/inet/tutorials:$HOME/omnetpp-5.6.2/samples/inet/showcases:$HOME/omnetpp-5.6.2/samples/os3/simulations:$HOME/omnetpp-5.6.2/samples/os3/src --image-path=$HOME/omnetpp-5.6.2/samples/inet/images:$HOME/omnetpp-5.6.2/samples/os3/images -l $HOME/omnetpp-5.6.2/samples/leosatellites/src/leosatellites omnetpp.ini
 
 \# to run in release mode
->>>>>>> c4452b28989374efc8e51cb4eb711fe6456c5717
 
 opp_run -m -u Qtenv -c Experiment-Image -n $HOME/omnetpp-5.6.2/samples/leosatellites/src:..:$HOME/omnetpp-5.6.2/samples/inet/src:$HOME/omnetpp-5.6.2/samples/inet/examples:$HOME/omnetpp-5.6.2/samples/inet/tutorials:$HOME/omnetpp-5.6.2/samples/inet/showcases:$HOME/omnetpp-5.6.2/samples/os3/simulations:$HOME/omnetpp-5.6.2/samples/os3/src --image-path=$HOME/omnetpp-5.6.2/samples/inet/images:$HOME/omnetpp-5.6.2/samples/os3/images -l $HOME/omnetpp-5.6.2/samples/leosatellites/src/leosatellites omnetpp.ini
