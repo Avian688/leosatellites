@@ -14,7 +14,7 @@
 // 
 
 #include "SatelliteMobility.h"
-#include "libnorad/cJulian.h";
+#include "libnorad/cJulian.h"
 
 #include <ctime>
 #include <cmath>
@@ -69,9 +69,7 @@ bool SatelliteMobility::isOnSameOrbitalPlane(double raan2, double inclination2)
             return true;
         }
     }
-    else {
-        return false;
-    }
+    return false;
 }
 
 double SatelliteMobility::getAltitude() const

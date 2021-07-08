@@ -21,7 +21,7 @@ parameters:
     double bstar = default(0.00042243);
     double drag = default(0.00001846);
 	
-	int planes;
-	int satPerPlane
+	int planes = default(1);
+	int satPerPlane = default(1);
     @display("i=msg/book");
 }

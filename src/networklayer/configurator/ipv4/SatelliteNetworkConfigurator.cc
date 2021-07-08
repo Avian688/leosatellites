@@ -46,6 +46,7 @@
 #include "inet/physicallayer/contract/packetlevel/IRadio.h"
 #include "inet/physicallayer/contract/packetlevel/IRadioMedium.h"
 #include "inet/physicallayer/contract/packetlevel/SignalTag_m.h"
+#include "inet/networklayer/ipv4/Ipv4RoutingTable.h"
 #endif
 Define_Module(SatelliteNetworkConfigurator);
 namespace inet {
@@ -147,13 +148,27 @@ void SatelliteNetworkConfigurator::reinvokeConfigurator(Topology& topology, cXML
 {
     for (int i = 0; i < topology.getNumNodes(); i++) {
         Node *node = (Node *)topology.getNode(i);
-        node->staticRoutes.clear();
+        //std::for_each(node->interfaceInfos.begin(), node->interfaceInfos.end(), [](InterfaceInfo* interface) { delete interface; });
+        //for( auto & p : node->interfaceInfos ) delete p;
         node->interfaceInfos.clear();
-        for(int j = 0; j < node->routingTable->getNumRoutes(); j++){
-            node->routingTable->deleteRoute(node->routingTable->getRoute(j));
+        Ipv4RoutingTable *routingTable = dynamic_cast<Ipv4RoutingTable*>(node->routingTable);
+        for(int j = 0; j < routingTable->getNumRoutes(); j++){
+            //delete node->routingTable->routes;
+            //Ipv4RoutingTable *routingTable = dynamic_cast<Ipv4RoutingTable*>(node->routingTable); //TO DO, change it so it isnt restricted to ipv4
+            bool check = routingTable->deleteRoute(routingTable->getRoute(j));
+            EV_DEBUG << check;
         }
+        for(int m = 0; m < node->routingTable->getNumMulticastRoutes(); m++){
+            node->routingTable->deleteMulticastRoute(node->routingTable->getMulticastRoute(m));
+        }
+        //routingTable->Ipv4RoutingTable;
+        std::for_each(node->staticRoutes.begin(), node->staticRoutes.end(), []( Ipv4Route* route) { delete route; });
                 //for every route, pop each route off.
+        node->staticRoutes.clear();
      }
+    std::for_each(topology.linkInfos.begin(), topology.linkInfos.end(), []( LinkInfo* link) { delete link; });
+    //std::for_each(topology.interfaceInfos.begin(), topology.interfaceInfos.end(), [](map::iterator iter) { delete (*iter).second; });
+    for( auto & p : topology.interfaceInfos ) delete p.second;
     topology.linkInfos.clear();
     topology.interfaceInfos.clear();
     topology.clear();
@@ -216,6 +231,7 @@ void SatelliteNetworkConfigurator::configureRoutingTable(Node *node)
                 if(original->getDestinationAsGeneric() == node->routingTable->getRoute(j)->getDestinationAsGeneric()){
                     node->routingTable->getRoute(j)->setNextHop(original->getNextHopAsGeneric()); //If the destination is already in the routing table, the destination will be updated with the new found better hop.
                     dupe = true;
+                    delete clone;
                 }
             }
             if(dupe != true){ //If no duplication occurs, the link can be added as usual. Otherwise it is ignored.
@@ -302,7 +318,7 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
 
             if(LUTMotionMobility *sourceLutMobility = dynamic_cast<LUTMotionMobility*>(sourceModule->getSubmodule("mobility")))
             {
-                if(LUTMotionMobility *destLutMobility = dynamic_cast<LUTMotionMobility*>(destModule->getSubmodule("mobility")))
+                if(dynamic_cast<LUTMotionMobility*>(destModule->getSubmodule("mobility")))
                 {
                     //Disable ground station to ground station links
                     link->disable();
@@ -322,7 +338,7 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
 
             if(SatelliteMobility *sourceSatMobility = dynamic_cast<SatelliteMobility*>(sourceModule->getSubmodule("mobility")))
             {
-                if(SatelliteMobility *destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility")))
+                if(dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility")))
                 {
                     //Disable inter-satellite links:
                     if(enableInterSatelliteLinksParameter){
@@ -588,6 +604,7 @@ void SatelliteNetworkConfigurator::extractTopology(Topology& topology)
                                 }
                             }
                         }
+
                     }
                 }
             }

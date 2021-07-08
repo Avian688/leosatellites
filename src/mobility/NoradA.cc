@@ -36,6 +36,8 @@ NoradA::NoradA()
 {
     gap = 0.0;
     orbit = nullptr;
+    planes = 0;
+    satPerPlane = 0;
 }
 
 void NoradA::finish()
