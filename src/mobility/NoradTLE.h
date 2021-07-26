@@ -35,6 +35,7 @@ using namespace omnetpp;
 // Provides the functionality for satellite positioning
 // this class provides the functionality needed to get the positions for satellites according
 // to current tables from web information by providing known data
+// Adapted by Aiden Valentine, Core code from OS3 framework.
 //-----------------------------------------------------
 class NoradTLE : public INorad
 {

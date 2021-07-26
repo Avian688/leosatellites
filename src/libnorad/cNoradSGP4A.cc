@@ -1,8 +1,9 @@
 //-----------------------------------------------------
-// cNoradSGP4.cpp
+// cNoradSGP4A.cpp
 //
 // NORAD SGP4 implementation. See historical note in cNoradBase.cpp
 // Copyright (c) 2003 Michael F. Henry
+// Updated for use with models implemented by Aiden Valentine
 //
 // mfh 12/07/2003
 //-----------------------------------------------------

@@ -1,8 +1,8 @@
 //-----------------------------------------------------
-// cOrbit.cpp
+// cOrbitA.cpp
 //
 // Copyright (c) 2002-2003 Michael F. Henry
-//
+// Updated for use with models implemented by Aiden Valentine
 // mfh 11/15/2003
 //-----------------------------------------------------
 

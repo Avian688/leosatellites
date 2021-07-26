@@ -1,18 +1,3 @@
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU Lesser General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU Lesser General Public License for more details.
-//
-// You should have received a copy of the GNU Lesser General Public License
-// along with this program.  If not, see http://www.gnu.org/licenses/.
-//
-
 #ifndef LEOSATELLITES_MOBILITY_NORADA_H_
 #define LEOSATELLITES_MOBILITY_NORADA_H_
 
@@ -36,7 +21,7 @@ class cOrbitA;
 // to current tables from web information by providing known data
 // This class has been adapted from the Norad class so that orbits can be propagated without the
 // requirement of a TLE file.
-// Written by Aiden Valentine
+// Modified by Aiden Valentine, original from the OS3 framework
 //-----------------------------------------------------
 class NoradA : public INorad
 {

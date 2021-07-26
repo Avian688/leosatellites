@@ -3,3 +3,5 @@
 /simulations/SatSGP4/*.anf
 /simulations/SatSGP4/results/
 /simulations/SatSGP4/timeResults/
+/simulations/SatSGP4/time.txt
+/simulations/SatSGP4/*.output
