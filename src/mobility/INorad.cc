@@ -12,11 +12,7 @@ using namespace omnetpp;
 Register_Abstract_Class(INorad);
 //Define_Module(INorad);
 
-// Provides the functionality for satellite positioning
-// this class provides the functionality needed to get the positions for satellites according
-// to current tables from web information by providing known data
-// This class has been adapted from the Norad class so that orbits can be propagated without the
-// requirement of a TLE file.
+// Interface for adapted OS3 Norad Modules - Written by Aiden Valentine
 
 /**
  * Return longitude of the node.

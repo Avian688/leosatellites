@@ -23,7 +23,7 @@ class cNoradBaseA;
 class cOrbitA
 {
 public:
-   cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion, double ecc, double incl, double meanAnom, double bstarA, double dragA, int satIndex, int planes, int satPerPlane);
+   cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion, double ecc, double incl, double meanAnom, double bstarA, double dragA, int phaseOffset, int satIndex, int planes, int satPerPlane);
    virtual ~cOrbitA();
 
    // Return satellite ECI data at given minutes since element's epoch.

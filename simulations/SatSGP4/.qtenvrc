@@ -4,7 +4,7 @@ last-runnumber=0
 
 [RunModeProfiles]
 fast-max-animation-speed=nan
-fast-max-playback-speed=1e+06
+fast-max-playback-speed=1000000
 fast-min-animation-speed=nan
 fast-min-playback-speed=1
 fast-playback-speed=1

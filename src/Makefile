@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for $(LIB_PREFIX)leosatellites
 #
 # This file was generated with the command:
-#  opp_makemake --make-so -f --deep -KINET_PROJ=../../inet -KOS3_PROJ=../../os3 -DINET_IMPORT -I$$\(OS3_PROJ\)/src -I$$\(INET_PROJ\)/src -I/usr/include/x86_64-linux-gnu/curl -L$$\(INET_PROJ\)/src -L$$\(OS3_PROJ\)/src -lINET$$\(D\) -los3$$\(D\)
+#  opp_makemake --make-so -f --deep -KINET_PROJ=../../inet -KOS3_PROJ=../../os3 -DINET_IMPORT -I$$\(OS3_PROJ\)/src -I$$\(INET_PROJ\)/src -I/usr/local/Cellar/curl/7.77.0/include/curl -L$$\(INET_PROJ\)/src -L$$\(OS3_PROJ\)/src -lINET$$\(D\) -los3$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -10,7 +10,7 @@ TARGET = $(LIB_PREFIX)leosatellites$(D)$(SHARED_LIB_SUFFIX)
 TARGET_DIR = .
 
 # C++ include paths (with -I)
-INCLUDE_PATH = -I$(OS3_PROJ)/src -I$(INET_PROJ)/src -I/usr/include/x86_64-linux-gnu/curl
+INCLUDE_PATH = -I$(OS3_PROJ)/src -I$(INET_PROJ)/src -I/usr/local/Cellar/curl/7.77.0/include/curl
 
 # Additional object and library files to link with
 EXTRA_OBJS =

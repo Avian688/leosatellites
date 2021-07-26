@@ -33,10 +33,10 @@
   ../../inet/src/inet/common/geometry/common/EulerAngles.h \
   ../../inet/src/inet/common/Units.h \
   ../../inet/src/inet/common/geometry/common/Quaternion.h \
-  ../../inet/src/inet/mobility/contract/IMobility.h mobility/NoradA.h \
+  ../../inet/src/inet/mobility/contract/IMobility.h mobility/INorad.h \
   ../../os3/src/libnorad/cEci.h ../../os3/src/libnorad/ccoord.h \
   ../../os3/src/libnorad/globals.h ../../os3/src/libnorad/cVector.h \
-  ../../os3/src/libnorad/cJulian.h
+  ../../os3/src/libnorad/cJulian.h mobility/NoradA.h
 
 mobility/SatelliteMobility.h:
 
@@ -110,7 +110,7 @@ mobility/SatelliteMobility.h:
 
 ../../inet/src/inet/mobility/contract/IMobility.h:
 
-mobility/NoradA.h:
+mobility/INorad.h:
 
 ../../os3/src/libnorad/cEci.h:
 
@@ -121,3 +121,5 @@ mobility/NoradA.h:
 ../../os3/src/libnorad/cVector.h:
 
 ../../os3/src/libnorad/cJulian.h:
+
+mobility/NoradA.h:

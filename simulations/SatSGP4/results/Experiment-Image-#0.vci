@@ -1,15 +1,15 @@
-file 35625 1625501011                                           
+file 41612 1627307022                                           
 version 2
-run Experiment-Image-0-20210705-17:03:19-50642
+run Experiment-Image-0-20210726-14:43:25-8932
 attr configname Experiment-Image
-attr datetime 20210705-17:03:19
+attr datetime 20210726-14:43:25
 attr experiment Experiment-Image
 attr inifile omnetpp.ini
 attr iterationvars ""
 attr iterationvarsf ""
 attr measurement ""
 attr network SatSGP4
-attr processid 50642
+attr processid 8932
 attr repetition 0
 attr replication #0
 attr resultdir results
@@ -17,19 +17,20 @@ attr runnumber 0
 attr seedset 0
 param SatSGP4.satellite[*].mobility.updateInterval 1s
 param SatSGP4.configurator.updateInterval 20000s
-param **.numOfSats 80
+param **.numOfSats 400
 param **.numOfMCCs 2
 param *.satellite[*].NoradModule.satName "\"sat\""
-param *.satellite[*].NoradModule.planes 24
-param *.satellite[*].NoradModule.satPerPlane 66
-param SatSGP4.MCC[0].mobility.latitude 38.9072
-param SatSGP4.MCC[0].mobility.longitude -77.0369
-param SatSGP4.MCC[0].cityName "\"Washington DC\""
-param SatSGP4.MCC[1].mobility.latitude 50.1109
-param SatSGP4.MCC[1].mobility.longitude 8.6821
-param SatSGP4.MCC[1].cityName "\"Frankfurt\""
+param *.satellite[*].NoradModule.planes 32
+param *.satellite[*].NoradModule.satPerPlane 50
+param *.satellite[*].NoradModule.phaseOffset 5
+param SatSGP4.MCC[0].mobility.latitude 51.5074
+param SatSGP4.MCC[0].mobility.longitude -0.1278
+param SatSGP4.MCC[0].cityName "\"London\""
+param SatSGP4.MCC[1].mobility.latitude 40.7128
+param SatSGP4.MCC[1].mobility.longitude -74.0060
+param SatSGP4.MCC[1].cityName "\"New York\""
 param *.MCC[0].app[0].destAddr "\"MCC[1]\""
-param *.configurator.enableInterSatelliteLinks true
+param *.configurator.enableInterSatelliteLinks false
 param SatSGP4.satellite[*].mobility.typename "\"SatelliteMobility\""
 param SatSGP4.MCC[*].mobility.typename "\"GroundStationMobility\""
 param **.constraintAreaMinX 0m
@@ -119,5 +120,5 @@ param SatSGP4.MCC[6].cityName "\"Litchfield\""
 vector 0 SatSGP4.MCC[0].app[0] pingTxSeq:vector ETV
 attr interpolationmode none
 attr title "ping tx seq, vector"
-0	5428 30196 81 74172 0 882.5 1766 0 1765 1558495 1834348615
+0	5468 36143 401 404402 0 1000 2001 0 2000 2001000 2668667000
 

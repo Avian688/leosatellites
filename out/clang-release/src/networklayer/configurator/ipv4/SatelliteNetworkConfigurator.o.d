@@ -55,10 +55,12 @@
   ../../inet/src/inet/mobility/base/StationaryMobilityBase.h \
   networklayer/configurator/ipv4/../../../mobility/GroundStationMobility.h \
   networklayer/configurator/ipv4/../../../mobility/SatelliteMobility.h \
-  networklayer/configurator/ipv4/../../../mobility/NoradA.h \
+  networklayer/configurator/ipv4/../../../mobility/INorad.h \
   ../../os3/src/libnorad/cEci.h ../../os3/src/libnorad/ccoord.h \
   ../../os3/src/libnorad/globals.h ../../os3/src/libnorad/cVector.h \
-  ../../os3/src/libnorad/cJulian.h ../../os3/src/libnorad/cEcef.h \
+  ../../os3/src/libnorad/cJulian.h \
+  networklayer/configurator/ipv4/../../../mobility/NoradA.h \
+  networklayer/configurator/ipv4/../../../libnorad/cEcef.h \
   ../../inet/src/inet/common/packet/chunk/ByteCountChunk.h \
   ../../inet/src/inet/common/packet/chunk/Chunk.h \
   ../../inet/src/inet/common/MemoryInputStream.h \
@@ -158,7 +160,8 @@
   ../../inet/src/inet/physicallayer/contract/packetlevel/IPathLoss.h \
   ../../inet/src/inet/physicallayer/contract/packetlevel/IPropagation.h \
   ../../inet/src/inet/physicallayer/common/packetlevel/ReceptionDecision.h \
-  ../../inet/src/inet/physicallayer/contract/packetlevel/SignalTag_m.h
+  ../../inet/src/inet/physicallayer/contract/packetlevel/SignalTag_m.h \
+  ../../inet/src/inet/networklayer/ipv4/Ipv4RoutingTable.h
 
 networklayer/configurator/ipv4/SatelliteNetworkConfigurator.h:
 
@@ -272,7 +275,7 @@ networklayer/configurator/ipv4/../../../mobility/GroundStationMobility.h:
 
 networklayer/configurator/ipv4/../../../mobility/SatelliteMobility.h:
 
-networklayer/configurator/ipv4/../../../mobility/NoradA.h:
+networklayer/configurator/ipv4/../../../mobility/INorad.h:
 
 ../../os3/src/libnorad/cEci.h:
 
@@ -284,7 +287,9 @@ networklayer/configurator/ipv4/../../../mobility/NoradA.h:
 
 ../../os3/src/libnorad/cJulian.h:
 
-../../os3/src/libnorad/cEcef.h:
+networklayer/configurator/ipv4/../../../mobility/NoradA.h:
+
+networklayer/configurator/ipv4/../../../libnorad/cEcef.h:
 
 ../../inet/src/inet/common/packet/chunk/ByteCountChunk.h:
 
@@ -485,3 +490,5 @@ networklayer/configurator/ipv4/../../../mobility/NoradA.h:
 ../../inet/src/inet/physicallayer/common/packetlevel/ReceptionDecision.h:
 
 ../../inet/src/inet/physicallayer/contract/packetlevel/SignalTag_m.h:
+
+../../inet/src/inet/networklayer/ipv4/Ipv4RoutingTable.h:

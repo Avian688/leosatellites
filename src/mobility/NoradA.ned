@@ -20,7 +20,7 @@ parameters:
     double meanAnomaly = default(0);
     double bstar = default(0.00042243);
     double drag = default(0.00001846);
-	
+	int phaseOffset = default(0);  //Must be lower than the number of planes. E.g. a phaseOffset of 5 with 32 orbital planes would equate to 5/32.
 	int planes = default(1);
 	int satPerPlane = default(1);
     @display("i=msg/book");

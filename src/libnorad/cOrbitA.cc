@@ -23,7 +23,7 @@
 // This class accepts a single satellite's Keplerian elements and provides information
 // regarding the satellite's orbit such as period, axis length,
 // ECI coordinates/velocity, etc., using the SGP4/SDP4 orbital models.
-cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion, double ecc, double incl, double meanAnom, double bstarA, double dragA, int satIndex, int planes, int satPerPlane) :
+cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion, double ecc, double incl, double meanAnom, double bstarA, double dragA, int phaseOffset, int satIndex, int planes, int satPerPlane) :
    m_pNoradModel(NULL)
 {
    satName = satNameA;
@@ -40,7 +40,7 @@ cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion
    int currentPlane = trunc(satIndex/satPerPlane);
    int planeIndex = (satIndex % (planes*satPerPlane))-(satPerPlane*currentPlane); //index of a satellite within a plane
    raan = ((360.0/planes)*currentPlane) * RADS_PER_DEG; //RAAN value, uniformly created so that there are equally spaced orbital planes for even coverage.
-   //double phaseOffset = ((360.0/satPerPlane)*(offsetVal/planes))*currentPlane;
+   double phaseOffsetVal = ((360.0/satPerPlane)*(phaseOffset/planes))*currentPlane;
    meanAnomaly = (((360.0/satPerPlane)*planeIndex))*RADS_PER_DEG; //Denotes the position of a satellite within its plane.
    if (epochYear < 57)
       epochYear += 2000;

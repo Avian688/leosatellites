@@ -108,7 +108,7 @@
   ../../inet/src/inet/mobility/base/MovingMobilityBase.h \
   physicallayer/unitdisk/../../mobility/GroundStationMobility.h \
   physicallayer/unitdisk/../../mobility/SatelliteMobility.h \
-  physicallayer/unitdisk/../../mobility/NoradA.h \
+  physicallayer/unitdisk/../../mobility/INorad.h \
   ../../os3/src/libnorad/cEci.h ../../os3/src/libnorad/cVector.h \
   ../../os3/src/libnorad/cJulian.h
 
@@ -332,7 +332,7 @@ physicallayer/unitdisk/../../mobility/GroundStationMobility.h:
 
 physicallayer/unitdisk/../../mobility/SatelliteMobility.h:
 
-physicallayer/unitdisk/../../mobility/NoradA.h:
+physicallayer/unitdisk/../../mobility/INorad.h:
 
 ../../os3/src/libnorad/cEci.h:
 

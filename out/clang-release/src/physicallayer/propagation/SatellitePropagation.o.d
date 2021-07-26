@@ -101,9 +101,10 @@
   ../../inet/src/inet/mobility/base/StationaryMobilityBase.h \
   physicallayer/propagation/../../mobility/GroundStationMobility.h \
   physicallayer/propagation/../../mobility/SatelliteMobility.h \
-  physicallayer/propagation/../../mobility/NoradA.h \
+  physicallayer/propagation/../../mobility/INorad.h \
   ../../os3/src/libnorad/cEci.h ../../os3/src/libnorad/cVector.h \
-  ../../os3/src/libnorad/cJulian.h ../../os3/src/libnorad/cEcef.h \
+  ../../os3/src/libnorad/cJulian.h \
+  physicallayer/propagation/../../libnorad/cEcef.h \
   ../../inet/src/inet/physicallayer/common/packetlevel/Arrival.h
 
 physicallayer/propagation/SatellitePropagation.h:
@@ -312,7 +313,7 @@ physicallayer/propagation/../../mobility/GroundStationMobility.h:
 
 physicallayer/propagation/../../mobility/SatelliteMobility.h:
 
-physicallayer/propagation/../../mobility/NoradA.h:
+physicallayer/propagation/../../mobility/INorad.h:
 
 ../../os3/src/libnorad/cEci.h:
 
@@ -320,6 +321,6 @@ physicallayer/propagation/../../mobility/NoradA.h:
 
 ../../os3/src/libnorad/cJulian.h:
 
-../../os3/src/libnorad/cEcef.h:
+physicallayer/propagation/../../libnorad/cEcef.h:
 
 ../../inet/src/inet/physicallayer/common/packetlevel/Arrival.h:

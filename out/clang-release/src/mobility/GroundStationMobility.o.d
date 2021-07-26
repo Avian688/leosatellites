@@ -35,7 +35,7 @@
   ../../inet/src/inet/common/Units.h \
   ../../inet/src/inet/common/geometry/common/Quaternion.h \
   ../../inet/src/inet/mobility/contract/IMobility.h \
-  ../../os3/src/libnorad/cEcef.h ../../os3/src/libnorad/ccoord.h \
+  mobility/../libnorad/cEcef.h ../../os3/src/libnorad/ccoord.h \
   ../../os3/src/libnorad/globals.h
 
 mobility/GroundStationMobility.h:
@@ -112,7 +112,7 @@ mobility/GroundStationMobility.h:
 
 ../../inet/src/inet/mobility/contract/IMobility.h:
 
-../../os3/src/libnorad/cEcef.h:
+mobility/../libnorad/cEcef.h:
 
 ../../os3/src/libnorad/ccoord.h:
 
