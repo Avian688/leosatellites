@@ -1,6 +1,6 @@
 *.log
-out/
-simulations/*.anf
-simulations/SatSGP4/results/
-simulations/globe
-simulations/SatSGP4/timeResults/
+**.out/
+**.*.anf
+**.results/
+**.simulations/globe
+**.timeResults/
