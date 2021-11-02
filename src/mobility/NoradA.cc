@@ -67,7 +67,6 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
     // Gap is needed to eliminate different start times
     gap = orbit->TPlusEpoch(currentJulian);
     updateTime(targetTime);
-
 }
 
 /**

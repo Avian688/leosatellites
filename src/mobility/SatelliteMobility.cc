@@ -20,10 +20,11 @@ SatelliteMobility::SatelliteMobility()
 void SatelliteMobility::initialize(int stage)
 {
     // noradModule must be initialized before LineSegmentsMobilityBase calling setTargetPosition() in its initialization at stage 1
+    LineSegmentsMobilityBase::initialize(stage);
     if (stage == 1) {
         noradModule->initializeMobility(nextChange);
     }
-    LineSegmentsMobilityBase::initialize(stage);
+
 
     noradModule = check_and_cast< INorad* >(getParentModule()->getSubmodule("NoradModule"));
     if (noradModule == nullptr) {
@@ -40,8 +41,11 @@ void SatelliteMobility::initialize(int stage)
 
     EV << "initializing SatSGP4Mobility stage " << stage << endl;
     WATCH(lastPosition);
+}
 
-    //move(); //updateVisualRepresentation();
+void SatelliteMobility::initializePosition()
+{
+    nextChange = simTime();
 }
 
 bool SatelliteMobility::isOnSameOrbitalPlane(double raan2, double inclination2)

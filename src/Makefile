@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for $(LIB_PREFIX)leosatellites
 #
 # This file was generated with the command:
-#  opp_makemake --make-so -f --deep -KINET_PROJ=../../inet -KOS3_PROJ=../../os3 -DINET_IMPORT -I$$\(OS3_PROJ\)/src -I$$\(INET_PROJ\)/src -I/usr/local/Cellar/curl/7.77.0/include/curl -L$$\(INET_PROJ\)/src -L$$\(OS3_PROJ\)/src -lINET$$\(D\) -los3$$\(D\)
+#  opp_makemake --make-so -f --deep -KINET4_PROJ=../../inet4 -KOS3_PROJ=../../os3 -DINET_IMPORT -I$$\(OS3_PROJ\)/src -I$$\(INET4_PROJ\)/src -I/usr/include/curl -L$$\(INET4_PROJ\)/src -L$$\(OS3_PROJ\)/src -lINET$$\(D\) -los3$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -10,13 +10,13 @@ TARGET = $(LIB_PREFIX)leosatellites$(D)$(SHARED_LIB_SUFFIX)
 TARGET_DIR = .
 
 # C++ include paths (with -I)
-INCLUDE_PATH = -I$(OS3_PROJ)/src -I$(INET_PROJ)/src -I/usr/local/Cellar/curl/7.77.0/include/curl
+INCLUDE_PATH = -I$(OS3_PROJ)/src -I$(INET4_PROJ)/src -I/usr/include/curl
 
 # Additional object and library files to link with
 EXTRA_OBJS =
 
 # Additional libraries (-L, -l options)
-LIBS = $(LDFLAG_LIBPATH)$(INET_PROJ)/src $(LDFLAG_LIBPATH)$(OS3_PROJ)/src  -lINET$(D) -los3$(D)
+LIBS = $(LDFLAG_LIBPATH)$(INET4_PROJ)/src $(LDFLAG_LIBPATH)$(OS3_PROJ)/src  -lINET$(D) -los3$(D)
 
 # Output directory
 PROJECT_OUTPUT_DIR = ../out
@@ -49,7 +49,7 @@ MSGFILES =
 SMFILES =
 
 # Other makefile variables (-K)
-INET_PROJ=../../inet
+INET4_PROJ=../../inet4
 OS3_PROJ=../../os3
 
 #------------------------------------------------------------------------------
@@ -75,7 +75,7 @@ include $(CONFIGFILE)
 # Simulation kernel and user interface libraries
 OMNETPP_LIBS = -loppenvir$D $(KERNEL_LIBS) $(SYS_LIBS)
 ifneq ($(TOOLCHAIN_NAME),clangc2)
-LIBS += -Wl,-rpath,$(abspath $(INET_PROJ)/src) -Wl,-rpath,$(abspath $(OS3_PROJ)/src)
+LIBS += -Wl,-rpath,$(abspath $(INET4_PROJ)/src) -Wl,-rpath,$(abspath $(OS3_PROJ)/src)
 endif
 
 COPTS = $(CFLAGS) $(IMPORT_DEFINES) -DINET_IMPORT $(INCLUDE_PATH) -I$(OMNETPP_INCL_DIR)

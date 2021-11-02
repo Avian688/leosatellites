@@ -68,6 +68,8 @@ protected:
     // - timestamps and initial position on playground are managed here.
     virtual void initialize(int stage);
 
+    virtual void initializePosition() override;
+
     // sets the position of satellite
     // - sets the target position for the satellite
     // - the position is fetched from the Norad module with reference to the current timestamp
