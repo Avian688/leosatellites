@@ -74,7 +74,7 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
  */
 double NoradA::getRaan()
 {
-    return raan;
+    return orbit->RAAN();
 }
 
 /**
@@ -82,7 +82,7 @@ double NoradA::getRaan()
  */
 double NoradA::getInclination()
 {
-    return inclination;
+    return orbit->Inclination();
 }
 
 /**

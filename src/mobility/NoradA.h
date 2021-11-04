@@ -52,8 +52,6 @@ private:
     int satelliteIndex;
     int planes;
     int satPerPlane;
-    double inclination; //inclination and raan used to determine orbital plane
-    double raan;
 
     cOrbitA* orbit;
 };
