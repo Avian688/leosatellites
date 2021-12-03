@@ -7,6 +7,8 @@
 #include "INorad.h"
 #include "NoradA.h"
 
+namespace inet {
+
 Define_Module(SatelliteMobility);
 
 SatelliteMobility::SatelliteMobility()
@@ -20,12 +22,11 @@ SatelliteMobility::SatelliteMobility()
 void SatelliteMobility::initialize(int stage)
 {
     // noradModule must be initialized before LineSegmentsMobilityBase calling setTargetPosition() in its initialization at stage 1
-    LineSegmentsMobilityBase::initialize(stage);
-    if (stage == 1) {
+
+    if (stage == INITSTAGE_PHYSICAL_ENVIRONMENT) {
         noradModule->initializeMobility(nextChange);
     }
-
-
+    LineSegmentsMobilityBase::initialize(stage);
     noradModule = check_and_cast< INorad* >(getParentModule()->getSubmodule("NoradModule"));
     if (noradModule == nullptr) {
         error("Error in SatSGP4Mobility::initializeMobility(): Cannot find module Norad.");
@@ -46,6 +47,7 @@ void SatelliteMobility::initialize(int stage)
 void SatelliteMobility::initializePosition()
 {
     nextChange = simTime();
+    LineSegmentsMobilityBase::initializePosition();
 }
 
 bool SatelliteMobility::isOnSameOrbitalPlane(double raan2, double inclination2)
@@ -115,4 +117,4 @@ void SatelliteMobility::fixIfHostGetsOutside()
 {
     raiseErrorIfOutside();
 }
-
+} // namespace inet

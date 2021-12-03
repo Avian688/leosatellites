@@ -16,7 +16,7 @@
 #ifndef MOBILITY_SATELLITEMOBILITY_H_
 #define MOBILITY_SATELLITEMOBILITY_H_
 
-
+#include "inet/common/INETDefs.h"
 #include <inet/mobility/base/LineSegmentsMobilityBase.h>
 #include "INorad.h"
 
@@ -28,7 +28,8 @@
 // it gets outside the playground. Code taken from OS3 so that the model can
 // work without altering the OS3 code itself.
 //-----------------------------------------------------
-class SatelliteMobility : public inet::LineSegmentsMobilityBase
+namespace inet {
+class INET_API SatelliteMobility : public inet::LineSegmentsMobilityBase
 {
 public:
     SatelliteMobility();
@@ -63,24 +64,26 @@ protected:
     int mapX, mapY;
     double transmitPower;
 
+    virtual int numInitStages() const override { return NUM_INIT_STAGES; }
+
     // initialize module
     // - creates a reference to the Norad moudule
     // - timestamps and initial position on playground are managed here.
-    virtual void initialize(int stage);
+    virtual void initialize(int stage) override;
 
     virtual void initializePosition() override;
 
     // sets the position of satellite
     // - sets the target position for the satellite
     // - the position is fetched from the Norad module with reference to the current timestamp
-    virtual void setTargetPosition();
+    virtual void setTargetPosition() override;
 
     // resets the position of the satellite
     // - wraps around the position of the satellite if it reaches the end of the playground
     virtual void fixIfHostGetsOutside();
 
     // implements basic satellite movement on map
-    virtual void move();
+    virtual void move() override;
 };
-
+}// namespace inet
 #endif

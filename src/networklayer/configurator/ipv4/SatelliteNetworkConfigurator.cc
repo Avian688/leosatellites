@@ -165,20 +165,16 @@ void SatelliteNetworkConfigurator::reinvokeConfigurator(Topology& topology, cXML
         std::for_each(node->staticRoutes.begin(), node->staticRoutes.end(), []( Ipv4Route* route) { delete route; });
                 //for every route, pop each route off.
         node->staticRoutes.clear();
-     }
+    }
     std::for_each(topology.linkInfos.begin(), topology.linkInfos.end(), []( LinkInfo* link) { delete link; });
     //std::for_each(topology.interfaceInfos.begin(), topology.interfaceInfos.end(), [](map::iterator iter) { delete (*iter).second; });
     for( auto & p : topology.interfaceInfos ) delete p.second;
     topology.linkInfos.clear();
     topology.interfaceInfos.clear();
     topology.clear();
-
     SatelliteNetworkConfigurator::extractTopology(topology);
-
     SatelliteNetworkConfigurator::addStaticRoutes(topology, autorouteElement);
-
     SatelliteNetworkConfigurator::configureAllRoutingTables();
-
 }
 
 /**
