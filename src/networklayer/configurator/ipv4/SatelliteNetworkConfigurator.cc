@@ -223,7 +223,7 @@ void SatelliteNetworkConfigurator::configureRoutingTable(Node *node)
         Ipv4Route *clone = new Ipv4Route();
         if(i < node->staticRoutes.size()){
             bool dupe = false;
-            for (size_t j = 0; j < node->routingTable->getNumRoutes(); j++){
+            for (int j = 0; j < node->routingTable->getNumRoutes(); j++){
                 if(original->getDestinationAsGeneric() == node->routingTable->getRoute(j)->getDestinationAsGeneric()){
                     node->routingTable->getRoute(j)->setNextHop(original->getNextHopAsGeneric()); //If the destination is already in the routing table, the destination will be updated with the new found better hop.
                     dupe = true;

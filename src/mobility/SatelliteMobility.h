@@ -29,7 +29,7 @@
 // work without altering the OS3 code itself.
 //-----------------------------------------------------
 namespace inet {
-class INET_API SatelliteMobility : public inet::LineSegmentsMobilityBase
+class SatelliteMobility : public LineSegmentsMobilityBase
 {
 public:
     SatelliteMobility();
