@@ -856,7 +856,7 @@ double SatelliteNetworkConfigurator::computeWirelessLinkWeight(Link *link, const
             {
                 if(SatelliteMobility *destSatMobility = dynamic_cast<SatelliteMobility*>(receiverModule->getSubmodule("mobility")))
                 {
-                    delay = ((sourceSatMobility->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), 550)*1000)/299792458);
+                    delay = ((sourceSatMobility->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000)/299792458);
                 }
                 else if(GroundStationMobility *destLutMobility = dynamic_cast<GroundStationMobility*>(receiverModule->getSubmodule("mobility")))
                 {

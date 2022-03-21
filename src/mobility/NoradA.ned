@@ -14,7 +14,8 @@ parameters:
     string satName;
     int epochYear = default(21);
     double epochDay = default(86.49033611);
-    double meanMotion = default(15.15306312100295);    //consistent between satellites
+    //double meanMotion = default(15.15306312100295);    //consistent between satellites
+    double altitude = default(550); //km
     double eccentricity = default(0.0001698);
     double inclination = default(53*0.0174533); 	  //consistent between satellites
     double meanAnomaly = default(0);

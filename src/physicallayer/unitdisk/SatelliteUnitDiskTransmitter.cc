@@ -57,9 +57,9 @@ const ITransmission *SatelliteUnitDiskTransmitter::createTransmission(const IRad
     auto endOrientation = mobility->getCurrentAngularPosition();
 
     //Make sure that the transmitter is either a satellite or ground station.
-    if (SatelliteMobility *sgp4Mobility = dynamic_cast<SatelliteMobility *>(mobility)) { //The node is a satellite (550km altitude)
-        longLatStartPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), 550);
-        longLatEndPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), 550);
+    if (SatelliteMobility *sgp4Mobility = dynamic_cast<SatelliteMobility *>(mobility)) { //The node is a satellite
+        longLatStartPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), sgp4Mobility->getAltitude());
+        longLatEndPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), sgp4Mobility->getAltitude());
     } else if (GroundStationMobility *lutMobility = dynamic_cast<GroundStationMobility *>(mobility)) {  //The node transmitter is a ground station
         longLatStartPosition = cCoordGeo(lutMobility->getLUTPositionY(), lutMobility->getLUTPositionX(), 0);
         longLatEndPosition = cCoordGeo(lutMobility->getLUTPositionY(), lutMobility->getLUTPositionX(), 0);

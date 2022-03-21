@@ -48,9 +48,9 @@ const ITransmission *SatelliteApskScalarTransmitter::createTransmission(const IR
     auto longLatStartPosition = cCoordGeo();
     auto longLatEndPosition = cCoordGeo();
 
-    if (SatSGP4Mobility *sgp4Mobility = dynamic_cast<SatSGP4Mobility *>(mobility)) { //The node is a satellite (550km altitude)
-        longLatStartPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), 550);
-        longLatEndPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), 550);
+    if (SatSGP4Mobility *sgp4Mobility = dynamic_cast<SatSGP4Mobility *>(mobility)) { //The node is a satellite
+        longLatStartPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), sgp4Mobility->getAltitude());
+        longLatEndPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), sgp4Mobility->getAltitude());
     } else if (LUTMotionMobility *lutMobility = dynamic_cast<LUTMotionMobility *>(mobility)) {  //The node transmitter is a ground station
         longLatStartPosition = cCoordGeo(lutMobility->getLUTPositionY(), lutMobility->getLUTPositionX(), 0);
         longLatEndPosition = cCoordGeo(lutMobility->getLUTPositionX(), lutMobility->getLUTPositionY(), 0);

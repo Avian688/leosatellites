@@ -49,7 +49,7 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
     std::string satNameA = par("satName");
     int epochY = par("epochYear");
     double epochD = par("epochDay");
-    double mMotion = par("meanMotion");
+    //double mMotion = par("meanMotion");
     double ecc = par("eccentricity");
     double incl = par("inclination");
     double meanAnom = par("meanAnomaly");
@@ -59,10 +59,12 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
     planes = par("planes");
     satPerPlane = par("satPerPlane");
 
+    double altitude = par("altitude");
+
     std::string satelliteName = getParentModule()->par("satelliteName").stringValue();
 
     //The new cOrbitA orbital propagator class is called which passes these Keplerian elements rather than the TLE file.
-    orbit = new cOrbitA(satNameA, epochY, epochD, mMotion, ecc, incl, meanAnom, bstarA, dragA, phaseOffset, satIndex, planes, satPerPlane);
+    orbit = new cOrbitA(satNameA, epochY, epochD, altitude, ecc, incl, meanAnom, bstarA, dragA, phaseOffset, satIndex, planes, satPerPlane);
 
     // Gap is needed to eliminate different start times
     gap = orbit->TPlusEpoch(currentJulian);
