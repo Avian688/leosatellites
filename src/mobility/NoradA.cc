@@ -58,7 +58,7 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
     int phaseOffset = par("phaseOffset");
     planes = par("planes");
     satPerPlane = par("satPerPlane");
-
+    elevationAngle = par("elevationAngle");
     double altitude = par("altitude");
 
     std::string satelliteName = getParentModule()->par("satelliteName").stringValue();
@@ -118,5 +118,10 @@ bool NoradA::isInterSatelliteLink(const int sat2Index)
         }
     }
     return false;
+}
+
+bool NoradA::isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude)
+{
+    return getElevation(refLatitude, refLongitude, refAltitude) > elevationAngle;
 }
 

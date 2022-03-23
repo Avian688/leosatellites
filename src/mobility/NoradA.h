@@ -47,11 +47,13 @@ public:
     // Checks if given an index the satellite is a valid inter-satellite link.
     bool isInterSatelliteLink(const int sat2Index);
 
+    bool isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 private:
 
     int satelliteIndex;
     int planes;
     int satPerPlane;
+    double elevationAngle;
 
     cOrbitA* orbit;
 };

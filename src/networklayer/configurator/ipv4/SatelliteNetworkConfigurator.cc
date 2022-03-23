@@ -324,7 +324,9 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                 //Ground to satellite - make sure links are correct distance
                 else if(SatelliteMobility *destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility")))
                 {
-                    if(destSatMobility->getDistance(sourceLutMobility->getLUTPositionY(), sourceLutMobility->getLUTPositionX(), 0) >= 1123) //out of range angle
+                    NoradA *destNoradModule = dynamic_cast<NoradA*>(destModule->getSubmodule("NoradModule", 0));
+                    //if(destSatMobility->getDistance(sourceLutMobility->getLUTPositionY(), sourceLutMobility->getLUTPositionX(), 0) >= 1123) //out of range angle
+                    if(!destNoradModule->isReachable(sourceLutMobility->getLUTPositionY(), sourceLutMobility->getLUTPositionX(), 0))
                     {
                         link->disable();
                         linkDisabled=true;
@@ -366,7 +368,11 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                 }
                 else if(LUTMotionMobility *destLutMobility = dynamic_cast<LUTMotionMobility*>(destModule->getSubmodule("mobility")))
                 {
-                    if(sourceSatMobility->getDistance(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0) >= 1123) //out of range angle
+                    NoradA *sourceNoradModule = dynamic_cast<NoradA*>(sourceModule->getSubmodule("NoradModule", 0));
+                    std::cout << "\nIS REACHABLE?: " << sourceNoradModule->isReachable(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0);
+                    std::cout << "\nElevation angle: " << sourceNoradModule->getElevation(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0);
+                    //if(sourceSatMobility->getDistance(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0) >= 1123) //out of range angle
+                    if(!sourceNoradModule->isReachable(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0))
                     {
                         link->disable(); //Ground to Satellite, make sure the maximum distance is satisfied, else disable it.
                         linkDisabled=true;
