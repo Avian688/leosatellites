@@ -37,7 +37,7 @@ opp_run -m -u Qtenv -c Experiment-Image -n $HOME/omnetpp-5.6.2/samples/leosatell
 # Source Code Referencing
 If you use this code or want to cite its existence in your paper please use the bibtex:
 ```
-@inproceedings{omnetpp-ndp-model,
+@inproceedings{omnetpp-leosatellites-model,
   author = {Valentine, Aiden and Parisis, George},
   title = {{Developing and experimenting with LEO satellite constellations in OMNeT++}},
   booktitle = {Proceedings of the 8th OMNeT++ Community Summit Conference},
