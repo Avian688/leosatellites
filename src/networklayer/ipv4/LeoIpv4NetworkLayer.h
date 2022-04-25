@@ -13,23 +13,21 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 
-package leosatellites.base;
-import leosatellites.mobility.GroundStationMobility;
-import inet.node.inet.WirelessHost;
-import inet.node.inet.StandardHost;
+#ifndef NETWORKLAYER_IPV4_LEOIPV4NETWORKLAYER_H_
+#define NETWORKLAYER_IPV4_LEOIPV4NETWORKLAYER_H_
 
-module GroundStation extends WirelessHost//WirelessHost
+#include "inet/common/INETDefs.h"
+
+namespace inet {
+
+class INET_API LeoIpv4NetworkLayer : public cModule
 {
-    parameters:
-        string cityName = default("");
-        string mobilityType = default("GroundStationMobility"); // Define mobility module
-        @display("t=$cityName");
-        @node;
+  protected:
+    virtual void refreshDisplay() const override;
+    virtual void updateDisplayString() const;
+};
 
-//    gates:
-//        input radioIn; // Input gate
-//        output radioOut; // Output gate
+} // namespace inet
 
-    connections allowunconnected: // Connections between compound gates and submodules
+#endif // ifndef NETWORKLAYER_IPV4_LEOIPV4NETWORKLAYER_H_
 
-}

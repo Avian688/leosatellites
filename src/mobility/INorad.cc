@@ -88,3 +88,7 @@ void INorad::setJulian(std::tm* currentTime)
                             currentTime->tm_min, 0);
 }
 
+bool INorad::isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude)
+{
+    return getElevation(refLatitude, refLongitude, refAltitude) > elevationAngle;
+}

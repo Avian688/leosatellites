@@ -120,8 +120,3 @@ bool NoradA::isInterSatelliteLink(const int sat2Index)
     return false;
 }
 
-bool NoradA::isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    return getElevation(refLatitude, refLongitude, refAltitude) > elevationAngle;
-}
-

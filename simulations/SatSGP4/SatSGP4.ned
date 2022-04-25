@@ -31,9 +31,9 @@ network SatSGP4
 {
     parameters:
         int numOfSats; // Number of satellites
-        int numOfMCCs; // Number of Mission Control Centers
+        int numOfGS; // Number of Mission Control Centers
         @display("bgi=background_earth,s;bgb=2160,1080");
-        //@statistic[rtt](source=count(MCC[0].app[0].rtt); record=figure; targetFigure=rttCounter; checkSignals=false);
+        //@statistic[rtt](source=count(GS[0].app[0].rtt); record=figure; targetFigure=rttCounter; checkSignals=false);
         //@figure[rttCounter](type=plot; pos=600,50; label="Round Trip Time");
     submodules:
         visualizer: <default("IntegratedCanvasVisualizer")> like IIntegratedVisualizer if hasVisualizer() {
@@ -46,7 +46,7 @@ network SatSGP4
             parameters:
                 @display("p=238.04,327.305;i=satellit_blue");
         }
-        MCC[numOfMCCs]: GroundStation {
+        groundStation[numOfGS]: GroundStation {
             parameters:
                 @display("p=238.04,343.535;r=10;i=device/receiverdish");
         }

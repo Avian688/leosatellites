@@ -59,11 +59,13 @@ public:
     // returns satellite longitude
     virtual double getLongitude() const;
 
+    virtual bool isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999) const;
+
 protected:
     INorad* noradModule;
     int mapX, mapY;
     double transmitPower;
-
+    bool initilised;
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }
 
     // initialize module
@@ -72,6 +74,9 @@ protected:
     virtual void initialize(int stage) override;
 
     virtual void initializePosition() override;
+
+    /** @brief Initializes the position according to the mobility model. */
+    virtual void setInitialPosition() override;
 
     // sets the position of satellite
     // - sets the target position for the satellite

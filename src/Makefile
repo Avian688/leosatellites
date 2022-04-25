@@ -29,6 +29,7 @@ O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 
 # Object files for local .cc, .msg and .sm files
 OBJS = \
+    $O/common/LeoChannelConstructor.o \
     $O/libnorad/cEcef.o \
     $O/libnorad/cNoradBaseA.o \
     $O/libnorad/cNoradSGP4A.o \
@@ -38,8 +39,12 @@ OBJS = \
     $O/mobility/NoradA.o \
     $O/mobility/NoradTLE.o \
     $O/mobility/SatelliteMobility.o \
+    $O/networklayer/configurator/ipv4/LeoNetworkConfigurator.o \
     $O/networklayer/configurator/ipv4/MatcherOS3.o \
     $O/networklayer/configurator/ipv4/SatelliteNetworkConfigurator.o \
+    $O/networklayer/configurator/ipv4/SatelliteNodeConfigurator.o \
+    $O/networklayer/ipv4/LeoIpv4NetworkLayer.o \
+    $O/networklayer/ipv4/LeoIpv4RoutingTable.o \
     $O/physicallayer/apskradio/SatelliteApskScalarTransmission.o \
     $O/physicallayer/apskradio/SatelliteApskScalarTransmitter.o \
     $O/physicallayer/propagation/SatellitePropagation.o \

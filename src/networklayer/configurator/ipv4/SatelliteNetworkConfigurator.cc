@@ -369,8 +369,6 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                 else if(LUTMotionMobility *destLutMobility = dynamic_cast<LUTMotionMobility*>(destModule->getSubmodule("mobility")))
                 {
                     NoradA *sourceNoradModule = dynamic_cast<NoradA*>(sourceModule->getSubmodule("NoradModule", 0));
-                    std::cout << "\nIS REACHABLE?: " << sourceNoradModule->isReachable(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0);
-                    std::cout << "\nElevation angle: " << sourceNoradModule->getElevation(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0);
                     //if(sourceSatMobility->getDistance(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0) >= 1123) //out of range angle
                     if(!sourceNoradModule->isReachable(destLutMobility->getLUTPositionY(), destLutMobility->getLUTPositionX(), 0))
                     {
@@ -467,7 +465,6 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                     continue;
                 if (isBridgeNode(destinationNode))
                     continue;
-
                 // determine next hop interface
                 // find next hop interface (the last IP interface on the path that is not in the source node)
                 Node *node = destinationNode;
@@ -520,6 +517,7 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                             else {
                                 sourceNode->staticRoutes.push_back(route);
                                 EV_DEBUG << "Adding route " << sourceInterfaceEntry->getInterfaceFullPath() << " -> " << destinationInterfaceEntry->getInterfaceFullPath() << " as " << route->str() << endl;
+                                std::cout << "Adding route " << sourceInterfaceEntry->getInterfaceFullPath() << " -> " << destinationInterfaceEntry->getInterfaceFullPath() << " as " << route->str() << endl;
                             }
                         }
                     }

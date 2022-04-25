@@ -65,8 +65,9 @@ public:
     // returns the distance to the satellite from a reference point (distance in km)
     virtual double getDistance(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 
+    virtual bool isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude);
 protected:
-    virtual void handleMessage(cMessage* msg);
+    virtual void handleMessage(cMessage* msg) override;
 
 protected:
     cEci eci;
@@ -74,6 +75,7 @@ protected:
 
     double gap;
     cCoordGeo geoCoord;
+    double elevationAngle;
 };
 
 #endif

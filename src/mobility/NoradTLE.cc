@@ -86,16 +86,6 @@ void NoradTLE::updateTime(const simtime_t& targetTime)
     geoCoord = eci.toGeo();
 }
 
-double NoradTLE::getLongitude()
-{
-    return rad2deg(geoCoord.m_Lon);
-}
-
-double NoradTLE::getLatitude()
-{
-    return rad2deg(geoCoord.m_Lat);
-}
-
 double NoradTLE::getRaan()
 {
     return raan;
@@ -106,51 +96,8 @@ double NoradTLE::getInclination()
     return inclination;
 }
 
-double NoradTLE::getElevation(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    cSite siteEquator(refLatitude, refLongitude, refAltitude);
-    cCoordTopo topoLook = siteEquator.getLookAngle(eci);
-    if (topoLook.m_El == 0.0) {
-        error("Error in Norad::getElevation(): Corrupted database.");
-    }
-    return rad2deg(topoLook.m_El);
-}
-
-double NoradTLE::getAzimuth(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    cSite siteEquator(refLatitude, refLongitude, refAltitude);
-    cCoordTopo topoLook = siteEquator.getLookAngle(eci);
-    if (topoLook.m_El == 0.0) {
-        error("Error in Norad::getAzimuth(): Corrupted database.");
-    }
-    return rad2deg(topoLook.m_Az);
-}
-
-double NoradTLE::getAltitude()
-{
-    geoCoord = eci.toGeo();
-    return geoCoord.m_Alt;
-}
-
-double NoradTLE::getDistance(const double& refLatitude, const double& refLongitude, const double& refAltitude)
-{
-    cSite siteEquator(refLatitude, refLongitude, refAltitude);
-    cCoordTopo topoLook = siteEquator.getLookAngle(eci);
-    double distance = topoLook.m_Range;
-    return distance;
-}
-
 void NoradTLE::handleMessage(cMessage* msg)
 {
     error("Error in Norad::handleMessage(): This module is not able to handle messages.");
-}
-
-void NoradTLE::setJulian(std::tm* currentTime)
-{
-    currentJulian = cJulian(currentTime->tm_year + 1900,
-                            currentTime->tm_mon + 1,
-                            currentTime->tm_mday,
-                            currentTime->tm_hour,
-                            currentTime->tm_min, 0);
 }
 

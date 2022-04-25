@@ -133,7 +133,8 @@ const IArrival *SatellitePropagation::computeArrival(const ITransmission *transm
 
     const Coord startArrivalPosition = ignoreMovementDuringPropagation ? mobility->getCurrentPosition() : computeArrivalPosition(startTime, startPosition, mobility);
     //const simtime_t startPropagationTime = startPosition.distance(startArrivalPosition) / propagationSpeed.get();
-    const simtime_t startPropagationTime =  distance / propagationSpeed.get();
+    //const simtime_t startPropagationTime =  distance / propagationSpeed.get();
+    const simtime_t startPropagationTime = SimTime(100,SIMTIME_MS);
     const simtime_t startArrivalTime = startTime + startPropagationTime;
     const Quaternion startArrivalOrientation = mobility->getCurrentAngularPosition();
     if (ignoreMovementDuringReception) {

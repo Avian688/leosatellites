@@ -13,23 +13,12 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 
-package leosatellites.base;
-import leosatellites.mobility.GroundStationMobility;
-import inet.node.inet.WirelessHost;
-import inet.node.inet.StandardHost;
+package leosatellites.common;
 
-module GroundStation extends WirelessHost//WirelessHost
+simple LeoChannelConstructor
 {
     parameters:
-        string cityName = default("");
-        string mobilityType = default("GroundStationMobility"); // Define mobility module
-        @display("t=$cityName");
-        @node;
-
-//    gates:
-//        input radioIn; // Input gate
-//        output radioOut; // Output gate
-
-    connections allowunconnected: // Connections between compound gates and submodules
-
+	   @class("inet::LeoChannelConstructor");
+	   string addressBase = default("10.0.0.0");    // start of address range from which to automatically assign an address to the autoassignInterfaces
+       string netmask = default("255.0.0.0"); 
 }

@@ -13,23 +13,18 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 
-package leosatellites.base;
-import leosatellites.mobility.GroundStationMobility;
-import inet.node.inet.WirelessHost;
-import inet.node.inet.StandardHost;
+#ifndef NETWORKLAYER_IPV4_LEOIPV4ROUTINGTABLE_H_
+#define NETWORKLAYER_IPV4_LEOIPV4ROUTINGTABLE_H_
 
-module GroundStation extends WirelessHost//WirelessHost
-{
-    parameters:
-        string cityName = default("");
-        string mobilityType = default("GroundStationMobility"); // Define mobility module
-        @display("t=$cityName");
-        @node;
+#include "inet/networklayer/ipv4/Ipv4RoutingTable.h"
+namespace inet {
 
-//    gates:
-//        input radioIn; // Input gate
-//        output radioOut; // Output gate
+class INET_API LeoIpv4RoutingTable : public Ipv4RoutingTable {
+public:
+    virtual void configureRouterId();
 
-    connections allowunconnected: // Connections between compound gates and submodules
-
+protected:
+    virtual void initialize(int stage) override;
+};
 }
+#endif /* NETWORKLAYER_IPV4_LEOIPV4ROUTINGTABLE_H_ */

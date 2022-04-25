@@ -10,7 +10,7 @@ import inet.node.inet.StandardHost;
 // Laser Satellite model that uses the NoradA implementation, which therefore allows the use of inter-satellite links.
 //
 //
-module LaserSatellite extends WirelessHost//`WirelessHost
+module LaserSatellitePPP extends StandardHost//`WirelessHost
 {
     parameters:
         @node; //because of MobilityBase initialization

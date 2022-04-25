@@ -29,14 +29,13 @@ public:
     NoradA();
     // Updates the end time of current linear movement for calculation of current position
     // targetTime: End time of current linear movement
-    virtual void updateTime(const simtime_t& targetTime);
+    virtual void updateTime(const simtime_t& targetTime) override;
 
-    virtual void finish();
     // This method gets the current simulation time, cares for the file download (happens only once)
     // of the TLE files from the web and reads the values for the satellites according to the
     // omnet.ini-file. The information is provided by the respective mobility class.
     // targetTime: End time of current linear movement
-    virtual void initializeMobility(const simtime_t& targetTime);
+    virtual void initializeMobility(const simtime_t& targetTime) override;
 
     double getRaan();
     double getInclination();
@@ -47,13 +46,12 @@ public:
     // Checks if given an index the satellite is a valid inter-satellite link.
     bool isInterSatelliteLink(const int sat2Index);
 
-    bool isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
+    virtual void finish() override;
 private:
 
     int satelliteIndex;
     int planes;
     int satPerPlane;
-    double elevationAngle;
 
     cOrbitA* orbit;
 };

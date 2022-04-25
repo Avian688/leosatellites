@@ -33,3 +33,15 @@ opp_run_dbg -m -u Qtenv -c Experiment-Image -n $HOME/omnetpp-5.6.2/samples/leosa
 \# to run in release mode
 
 opp_run -m -u Qtenv -c Experiment-Image -n $HOME/omnetpp-5.6.2/samples/leosatellites/src:..:$HOME/omnetpp-5.6.2/samples/inet/src:$HOME/omnetpp-5.6.2/samples/inet/examples:$HOME/omnetpp-5.6.2/samples/inet/tutorials:$HOME/omnetpp-5.6.2/samples/inet/showcases:$HOME/omnetpp-5.6.2/samples/os3/simulations:$HOME/omnetpp-5.6.2/samples/os3/src --image-path=$HOME/omnetpp-5.6.2/samples/inet/images:$HOME/omnetpp-5.6.2/samples/os3/images -l $HOME/omnetpp-5.6.2/samples/leosatellites/src/leosatellites omnetpp.ini
+
+# Source Code Referencing
+If you use this code or want to cite its existence in your paper please use the bibtex:
+'''
+@inproceedings{omnetpp-ndp-model,
+  author = {Valentine, Aiden and Parisis, George},
+  title = {{Developing and experimenting with LEO satellite constellations in OMNeT++}},
+  booktitle = {Proceedings of the 8th OMNeT++ Community Summit Conference},
+  address = {Hamburg, Germany},
+  Year = {2021}
+}
+'''
