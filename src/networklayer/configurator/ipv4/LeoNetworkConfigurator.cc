@@ -218,7 +218,7 @@ void LeoNetworkConfigurator::reinvokeConfigurator(Topology& topology, cXMLElemen
     //readManualMulticastRouteConfiguration(topology);
     //readInterfaceConfiguration(topology);
     //assignAddresses(topology);
-    LeoNetworkConfigurator::addStaticRoutes(topology, autorouteElement);
+    addStaticRoutes(topology, autorouteElement);
     configureAllInterfaces();
     LeoNetworkConfigurator::configureAllRoutingTables();
 }

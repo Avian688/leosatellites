@@ -12,8 +12,8 @@ simple NoradA like INorad
 parameters:
     int satIndex;
     string satName;
-    int epochYear = default(21);
-    double epochDay = default(86.49033611);
+    int epochYear = default(22);
+    double epochDay = default(115);
     //double meanMotion = default(15.15306312100295);    //consistent between satellites
     double altitude = default(550); //km
     double eccentricity = default(0.0001698);

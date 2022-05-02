@@ -37,7 +37,7 @@ void SatelliteMobility::initialize(int stage)
     //std::time_t timestamp = std::time(nullptr);       // get current time as an integral value holding the num of secs
     std::time_t timestamp =  1619119189;  //8:20PM 22/04/2021                                             // since 00:00, Jan 1 1970 UTC
     std::tm* currentTime = std::gmtime(&timestamp);   // convert timestamp into structure holding a calendar date and time
-    noradModule->INorad::setJulian(currentTime);
+    noradModule->setJulian(currentTime);
 
     mapX = std::atoi(getParentModule()->getParentModule()->getDisplayString().getTagArg("bgb", 0));
     mapY = std::atoi(getParentModule()->getParentModule()->getDisplayString().getTagArg("bgb", 1));

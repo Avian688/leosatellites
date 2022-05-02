@@ -43,7 +43,8 @@ protected:
     void scheduleUpdate();
     virtual void finish() override;
 
-private:
+protected:
+    std::string networkName;
     int numOfSats;
     int numOfGS;
     int numOfPlanes;
