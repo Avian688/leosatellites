@@ -8,9 +8,9 @@
 #include <inet/networklayer/common/InterfaceTable.h>
 #include <inet/networklayer/common/InterfaceEntry.h>
 #include <inet/linklayer/ppp/Ppp.h>
-
-#include "../networklayer/configurator/ipv4/SatelliteNodeConfigurator.h"
-#include "../networklayer/configurator/ipv4/LeoNetworkConfigurator.h"
+#include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
+#include "../networklayer/ipv4/LeoIpv4RoutingTable.h"
+#include "../networklayer/configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 #include "../mobility/SatelliteMobility.h"
 #include "../mobility/GroundStationMobility.h"
 
@@ -22,11 +22,12 @@ public:
     virtual ~LeoChannelConstructor();
 
 protected:
-    LeoNetworkConfigurator* configurator;
+    LeoIpv4NetworkConfigurator* configurator;
 
     cMessage *startManagerNode;
     cMessage *updateTimer;
     simtime_t updateInterval;
+    std::string dataRate;
 
     virtual bool handleOperationStage(LifecycleOperation *operation, IDoneCallback *doneCallback) override;
     void updatePPPModules(cModule *mod);
@@ -40,6 +41,7 @@ protected:
     virtual void setUpGSLinks();
     virtual void addPPPInterfaces();
     virtual void prepareInterface(InterfaceEntry *interfaceEntry);
+    void createChannel(std::string delay, cGate *gate1, cGate*gate2);
     void scheduleUpdate();
     virtual void finish() override;
 

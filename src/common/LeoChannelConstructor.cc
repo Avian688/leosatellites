@@ -47,15 +47,17 @@ void LeoChannelConstructor::initialize(int stage)
         numOfGS = getAncestorPar("numOfGS");
         satPerPlane = getAncestorPar("satsPerPlane");
         numOfPlanes = (int)std::ceil(((double)numOfSats/((double)planes*(double)satPerPlane))*(double)planes); //depending on number of satellites, all planes may not be filled
-        configurator = dynamic_cast<LeoNetworkConfigurator*>(getParentModule()->getSubmodule("configurator"));
+        configurator = dynamic_cast<LeoIpv4NetworkConfigurator*>(getParentModule()->getSubmodule("configurator"));
         updateInterval = 0;
         networkName = getParentModule()->getName();
+        dataRate = "10Mbps";
         std::cout << "\n" << networkName << endl;
         scheduleAt(0.0, startManagerNode);
 
     }
 }
 
+//TODO move the message handling to configurator?
 void LeoChannelConstructor::handleMessage(cMessage *msg)
 {
     if(msg == updateTimer){
@@ -64,7 +66,7 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
         addPPPInterfaces();
         //setUpInterfaces();
         updateChannels();
-        configurator->reinvokeConfigure();
+        configurator->updateForwardingStates();
 
         //update all routing tables
 
@@ -75,8 +77,9 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
     }
     else if(msg == startManagerNode){
         //updateChannels();
+
         setUpSimulation();
-        configurator->reinvokeConfigure();
+        configurator->updateForwardingStates();
         scheduleUpdate();
     }
     else{
@@ -93,7 +96,7 @@ void LeoChannelConstructor::scheduleUpdate()
 
 void LeoChannelConstructor::setUpSimulation()
 {
-    cChannelType *channelType = cChannelType::get("ned.DatarateChannel"); //replace with either gs channel or laser link channel ned file
+    //cChannelType *channelType = cChannelType::get("ned.DatarateChannel"); //replace with either gs channel or laser link channel ned file
     for(int satNum = 0; satNum < numOfSats; satNum++){
         std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
         cModule *satMod = getModuleByPath(satName.c_str());
@@ -130,17 +133,20 @@ void LeoChannelConstructor::setUpSimulation()
                 inGateSat2 = gatePair2.first;
                 outGateSat2 = gatePair2.second;
 
-                cChannel *channel = channelType->create("channel");
+                //cChannel *channel = channelType->create("channel");
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModA->getSubmodule("mobility"));
                 double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
                 std::string dString = std::to_string(distance/299792458) + "s";
-                channel->par("delay").parse(dString.c_str());
-                channel->par("datarate").parse("10Mbps");
-                outGateSat1->connectTo(inGateSat2, channel);
-                cChannel *channel2 = channelType->create("channel");
-                channel2->par("delay").parse(dString.c_str());
-                channel2->par("datarate").parse("10Mbps");
-                outGateSat2->connectTo(inGateSat1, channel2);
+                //channel->par("delay").parse(dString.c_str());
+                //channel->par("datarate").parse("10Mbps");
+                //outGateSat1->connectTo(inGateSat2, channel);
+
+                createChannel(dString, outGateSat1, inGateSat2);
+                createChannel(dString, outGateSat2, inGateSat1);
+                //cChannel *channel2 = channelType->create("channel");
+                //channel2->par("delay").parse(dString.c_str());
+                //channel2->par("datarate").parse("10Mbps");
+                //outGateSat2->connectTo(inGateSat1, channel2);   //TODO replace with createChannel()
             }
 
             int destSatNumB = (satNum + satPerPlane);// % totalSats;
@@ -155,17 +161,19 @@ void LeoChannelConstructor::setUpSimulation()
                 inGateSat2 = gatePair2.first;
                 outGateSat2 = gatePair2.second;
 
-                cChannel *channel = channelType->create("channel");
+                //cChannel *channel = channelType->create("channel");
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModB->getSubmodule("mobility"));
                 double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
                 std::string dString = std::to_string(distance/299792458) + "s";
-                channel->par("delay").parse(dString.c_str());
-                channel->par("datarate").parse("10Mbps");
-                outGateSat1->connectTo(inGateSat2, channel);
-                cChannel *channel2 = channelType->create("channel");
-                channel2->par("delay").parse(dString.c_str());
-                channel2->par("datarate").parse("10Mbps");
-                outGateSat2->connectTo(inGateSat1, channel2);
+                createChannel(dString, outGateSat1, inGateSat2);
+                createChannel(dString, outGateSat2, inGateSat1);
+                //channel->par("delay").parse(dString.c_str());
+                //channel->par("datarate").parse("10Mbps");
+                //outGateSat1->connectTo(inGateSat2, channel);
+                //cChannel *channel2 = channelType->create("channel");
+                //channel2->par("delay").parse(dString.c_str());
+                //channel2->par("datarate").parse("10Mbps");
+                //outGateSat2->connectTo(inGateSat1, channel2);
             }
         }
     }
@@ -180,13 +188,14 @@ void LeoChannelConstructor::setUpInterfaces()
         std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
         cModule *satMod = getModuleByPath(satName.c_str());
         updatePPPModules(satMod);
-        SatelliteNodeConfigurator *nodeConfig = dynamic_cast<SatelliteNodeConfigurator*>(satMod->getSubmodule("ipv4")->getSubmodule("configurator"));
+        dynamic_cast<LeoIpv4RoutingTable*>(satMod->getModuleByPath(".ipv4.routingTable"))->configureRouterId();
     }
 
     for(int gsNum = 0; gsNum < numOfGS; gsNum++){
         std::string gsName = std::string(networkName + ".groundStation[" + std::to_string(gsNum) + "]");
         cModule *gsMod = getModuleByPath(gsName.c_str());
         updatePPPModules(gsMod);
+        dynamic_cast<LeoIpv4RoutingTable*>(gsMod->getModuleByPath(".ipv4.routingTable"))->configureRouterId();
     }
 }
 
@@ -289,17 +298,19 @@ void LeoChannelConstructor::setUpGSLinks()
                             outGateSat = gatePair1.second;
                             inGateGS = gatePair2.first;
                             outGateGS = gatePair2.second;
-                            cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                            cChannel *channel = channelType->create("channel");
+                            //cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
+                            //cChannel *channel = channelType->create("channel");
                             double distance = satMobility->getDistance(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)*1000;
                             std::string dString = std::to_string(distance/299792458) + "s";
-                            channel->par("delay").parse(dString.c_str());
-                            channel->par("datarate").parse("10Mbps");
-                            outGateSat->connectTo(inGateGS, channel);
-                            cChannel *channel2 = channelType->create("channel");
-                            channel2->par("delay").parse(dString.c_str());
-                            channel2->par("datarate").parse("10Mbps");
-                            outGateGS->connectTo(inGateSat, channel2);
+                            createChannel(dString, outGateSat, inGateGS);
+                            createChannel(dString, outGateGS, inGateSat);
+                            //channel->par("delay").parse(dString.c_str());
+                            //channel->par("datarate").parse("10Mbps");
+                            //outGateSat->connectTo(inGateGS, channel);
+                            //cChannel *channel2 = channelType->create("channel");
+                            //channel2->par("delay").parse(dString.c_str());
+                            //channel2->par("datarate").parse("10Mbps");
+                            //outGateGS->connectTo(inGateSat, channel2);
                             //add interface to interface table?
                         }
                 }
@@ -314,17 +325,19 @@ void LeoChannelConstructor::setUpGSLinks()
                     outGateSat = gatePair1.second;
                     inGateGS = gatePair2.first;
                     outGateGS = gatePair2.second;
-                    cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                    cChannel *channel = channelType->create("channel");
+                    //cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
+                    //cChannel *channel = channelType->create("channel");
                     double distance = satMobility->getDistance(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)*1000;
                     std::string dString = std::to_string(distance/299792458) + "s";
-                    channel->par("delay").parse(dString.c_str());
-                    channel->par("datarate").parse("10Mbps");
-                    outGateSat->connectTo(inGateGS, channel);
-                    cChannel *channel2 = channelType->create("channel");
-                    channel2->par("delay").parse(dString.c_str());
-                    channel2->par("datarate").parse("10Mbps");
-                    outGateGS->connectTo(inGateSat, channel2);
+                    createChannel(dString, outGateSat, inGateGS);
+                    createChannel(dString, outGateGS, inGateSat);
+                    //channel->par("delay").parse(dString.c_str());
+                    //channel->par("datarate").parse("10Mbps");
+                    //outGateSat->connectTo(inGateGS, channel);
+                    //cChannel *channel2 = channelType->create("channel");
+                    //channel2->par("delay").parse(dString.c_str());
+                    //channel2->par("datarate").parse("10Mbps");
+                    //outGateGS->connectTo(inGateSat, channel2);
                 }
             }
             else{ //remove link is exists
@@ -335,7 +348,6 @@ void LeoChannelConstructor::setUpGSLinks()
                         if((endGate->getOwnerModule()->getOwner()->getOwner() == satMod)){
                             gsMod->gate("pppg$o", i)->disconnect();
                             break;
-                            //delete interfaceEntry from table
                         }
                     }
                 }
@@ -345,7 +357,6 @@ void LeoChannelConstructor::setUpGSLinks()
                         cGate* endGate = satMod->gate("pppg$o", i)->getPathEndGate();
                         if((endGate->getOwnerModule()->getOwner()->getOwner() == gsMod)){
                             satMod->gate("pppg$o", i)->disconnect();
-                            //delete interfaceEntry from table
                         }
                     }
                 }
@@ -437,6 +448,15 @@ void LeoChannelConstructor::prepareInterface(InterfaceEntry *interfaceEntry)
         interfaceData->joinMulticastGroup(Ipv4Address::ALL_HOSTS_MCAST);
         interfaceData->joinMulticastGroup(Ipv4Address::ALL_ROUTERS_MCAST);
     }
+}
+
+void LeoChannelConstructor::createChannel(std::string delay, cGate *gate1, cGate*gate2)
+{
+    cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
+    cChannel *channel = channelType->create("channel");
+    channel->par("delay").parse(delay.c_str());
+    channel->par("datarate").parse(dataRate.c_str());
+    gate1->connectTo(gate2, channel);
 }
 
 bool LeoChannelConstructor::handleOperationStage(LifecycleOperation *operation, IDoneCallback *doneCallback)

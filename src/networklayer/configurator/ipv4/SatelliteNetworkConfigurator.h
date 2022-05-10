@@ -18,6 +18,7 @@
 
 #include "inet/networklayer/configurator/ipv4/Ipv4NetworkConfigurator.h"
 #include "inet/networklayer/configurator/base/NetworkConfiguratorBase.h"
+#include "inet/common/packet/chunk/ByteCountChunk.h"
 
 namespace inet {
 

@@ -85,7 +85,7 @@ module LeoIpv4NetworkLayer like INetworkLayer
             parameters:
                 @display("p=550,300;b=600,5");
         }
-        ip: <default("Ipv4")> like IIpv4 {
+        ip: <default("LeoIpv4")> like IIpv4 {
             parameters:
                 @display("p=700,400;q=queue");
         }
