@@ -50,9 +50,9 @@ void LeoChannelConstructor::initialize(int stage)
         configurator = dynamic_cast<LeoIpv4NetworkConfigurator*>(getParentModule()->getSubmodule("configurator"));
         updateInterval = 0;
         networkName = getParentModule()->getName();
-        dataRate = "10Mbps";
+        linkDataRate = par("dataRate").str();
         std::cout << "\n" << networkName << endl;
-        scheduleAt(0.0, startManagerNode);
+        scheduleAt(0, startManagerNode);
 
     }
 }
@@ -411,8 +411,8 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
             module->finalizeParameters();
             module->buildInside();
             module->scheduleStart(simTime());
-            module->callInitialize();
 
+            module->callInitialize();  //error here - trying to initisalise already existing module.
             Ipv4Address address = Ipv4Address(addressBase.getInt() + uint32(module->getId()));
 
             //configurator->assignNewAddress(module);
@@ -455,7 +455,8 @@ void LeoChannelConstructor::createChannel(std::string delay, cGate *gate1, cGate
     cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
     cChannel *channel = channelType->create("channel");
     channel->par("delay").parse(delay.c_str());
-    channel->par("datarate").parse(dataRate.c_str());
+    //channel->par("datarate").parse(linkDataRate.c_str());
+    channel->par("datarate").parse("10Mbps");
     gate1->connectTo(gate2, channel);
 }
 

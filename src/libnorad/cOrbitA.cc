@@ -41,10 +41,6 @@ cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double altitud
    raan = ((360.0/planes)*currentPlane) * RADS_PER_DEG; //RAAN value, uniformly created so that there are equally spaced orbital planes for even coverage.
    double phaseOffsetVal = ((360.0/satPerPlane)*(phaseOffset/planes))*currentPlane;
    meanAnomaly = (((360.0/satPerPlane)*planeIndex))*RADS_PER_DEG; //Denotes the position of a satellite within its plane.
-   if (epochYear < 57)
-      epochYear += 2000;
-   else
-      epochYear += 1900;
 
    m_jdEpoch = cJulian(epochYear, epochDay);
 

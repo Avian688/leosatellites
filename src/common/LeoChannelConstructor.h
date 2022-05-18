@@ -27,7 +27,7 @@ protected:
     cMessage *startManagerNode;
     cMessage *updateTimer;
     simtime_t updateInterval;
-    std::string dataRate;
+    std::string linkDataRate;
 
     virtual bool handleOperationStage(LifecycleOperation *operation, IDoneCallback *doneCallback) override;
     void updatePPPModules(cModule *mod);

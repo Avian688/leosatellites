@@ -12,16 +12,16 @@ simple NoradA like INorad
 parameters:
     int satIndex;
     string satName;
-    int epochYear = default(00);
+    int epochYear = default(0);
     double epochDay = default(0);
     //double meanMotion = default(15.15306312100295);    //consistent between satellites
     double altitude = default(550); //km
-    double eccentricity = default(0.0001698);
+    double eccentricity = default(0.000001);
     double inclination = default(53*0.0174533); 	  //consistent between satellites
     double meanAnomaly = default(0);
-    double bstar = default(0.00042243);
-    double drag = default(0.00001846);
-    double elevationAngle = default(30);
+    double bstar = default(0);//double bstar = default(0.00042243);
+    double drag = default(0);//double drag = default(0.00001846);
+    double elevationAngle = default(25);
 	int phaseOffset = default(0);  //Must be lower than the number of planes. E.g. a phaseOffset of 5 with 32 orbital planes would equate to 5/32.
 	int planes = default(1);
 	int satPerPlane = default(1);

@@ -30,6 +30,7 @@ O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 # Object files for local .cc, .msg and .sm files
 OBJS = \
     $O/common/LeoChannelConstructor.o \
+    $O/common/LeoFlowScheduler.o \
     $O/libnorad/cEcef.o \
     $O/libnorad/cNoradBaseA.o \
     $O/libnorad/cNoradSGP4A.o \
