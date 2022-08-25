@@ -22,4 +22,6 @@ simple LeoIpv4NetworkConfigurator extends NetworkConfiguratorBase
     parameters:
         @class(inet::LeoIpv4NetworkConfigurator);
         @display("i=block/cogwheel");
+        int numOfKPaths = default(1);
+        bool loadFiles = default (true);
 }

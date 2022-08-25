@@ -16,6 +16,7 @@
 #include "LeoChannelConstructor.h"
 #include "inet/common/ModuleAccess.h"
 #include <fstream> //check if needed
+#include <cstring>
 
 using namespace std;
 namespace inet {
@@ -49,9 +50,9 @@ void LeoChannelConstructor::initialize(int stage)
         numOfPlanes = (int)std::ceil(((double)numOfSats/((double)planes*(double)satPerPlane))*(double)planes); //depending on number of satellites, all planes may not be filled
         configurator = dynamic_cast<LeoIpv4NetworkConfigurator*>(getParentModule()->getSubmodule("configurator"));
         updateInterval = 0;
+        currentInterval = 0;
         networkName = getParentModule()->getName();
         linkDataRate = par("dataRate").str();
-        std::cout << "\n" << networkName << endl;
         scheduleAt(0, startManagerNode);
 
     }
@@ -61,12 +62,14 @@ void LeoChannelConstructor::initialize(int stage)
 void LeoChannelConstructor::handleMessage(cMessage *msg)
 {
     if(msg == updateTimer){
+        currentInterval += updateInterval;
         //std::cout << "Updating at time: " << simTime() << endl;
         setUpGSLinks();
         addPPPInterfaces();
         //setUpInterfaces();
         updateChannels();
-        configurator->updateForwardingStates();
+        configurator->updateForwardingStates(currentInterval);
+        //configurator->generateTopologyGraph(currentInterval);
 
         //update all routing tables
 
@@ -79,7 +82,9 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
         //updateChannels();
 
         setUpSimulation();
-        configurator->updateForwardingStates();
+        configurator->establishInitialISLs();
+        configurator->updateForwardingStates(currentInterval);
+        //configurator->generateTopologyGraph(currentInterval);
         scheduleUpdate();
     }
     else{
@@ -105,7 +110,7 @@ void LeoChannelConstructor::setUpSimulation()
         }
     }
     for(int planeNum = 0; planeNum < numOfPlanes; planeNum++){
-        int numOfSatsInPlane =  planeNum*satPerPlane+satPerPlane;
+        unsigned int numOfSatsInPlane =  planeNum*satPerPlane+satPerPlane;
         if(numOfSats < numOfSatsInPlane){
             numOfSatsInPlane = numOfSats;
         }
@@ -135,18 +140,12 @@ void LeoChannelConstructor::setUpSimulation()
 
                 //cChannel *channel = channelType->create("channel");
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModA->getSubmodule("mobility"));
+                //configurator->addToISLMobilityMap(dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility")), destSatMobility);
                 double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
-                std::string dString = std::to_string(distance/299792458) + "s";
-                //channel->par("delay").parse(dString.c_str());
-                //channel->par("datarate").parse("10Mbps");
-                //outGateSat1->connectTo(inGateSat2, channel);
+                std::string dString = std::to_string((distance/299792458)*1000) + "ms";
 
                 createChannel(dString, outGateSat1, inGateSat2);
                 createChannel(dString, outGateSat2, inGateSat1);
-                //cChannel *channel2 = channelType->create("channel");
-                //channel2->par("delay").parse(dString.c_str());
-                //channel2->par("datarate").parse("10Mbps");
-                //outGateSat2->connectTo(inGateSat1, channel2);   //TODO replace with createChannel()
             }
 
             int destSatNumB = (satNum + satPerPlane);// % totalSats;
@@ -161,25 +160,19 @@ void LeoChannelConstructor::setUpSimulation()
                 inGateSat2 = gatePair2.first;
                 outGateSat2 = gatePair2.second;
 
-                //cChannel *channel = channelType->create("channel");
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModB->getSubmodule("mobility"));
+                //configurator->addToISLMobilityMap(dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility")), destSatMobility);
                 double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
-                std::string dString = std::to_string(distance/299792458) + "s";
+                std::string dString = std::to_string((distance/299792458)*1000) + "ms";
                 createChannel(dString, outGateSat1, inGateSat2);
                 createChannel(dString, outGateSat2, inGateSat1);
-                //channel->par("delay").parse(dString.c_str());
-                //channel->par("datarate").parse("10Mbps");
-                //outGateSat1->connectTo(inGateSat2, channel);
-                //cChannel *channel2 = channelType->create("channel");
-                //channel2->par("delay").parse(dString.c_str());
-                //channel2->par("datarate").parse("10Mbps");
-                //outGateSat2->connectTo(inGateSat1, channel2);
             }
         }
     }
 
     setUpGSLinks();
     setUpInterfaces();
+    updateChannels();
 }
 
 void LeoChannelConstructor::setUpInterfaces()
@@ -240,26 +233,37 @@ void LeoChannelConstructor::updateChannels()
         cModule *satMod = getModuleByPath(satName.c_str());
         for(int i = 0; i < satMod->gateSize("pppg$o"); i++){  //check each possible pppg gate
             cGate* srcGate = satMod->gate("pppg$o", i);
+            cGate* srcGate2 = satMod->gate("pppg$i", i);
             if(srcGate->isConnected()){
                 cChannel *chan = srcGate->getChannel();
-                cModule* destModule = srcGate->getPathEndGate()->getOwnerModule();
-                std::string mobilityName = destModule->getModuleByPath("^.^.mobility")->getNedTypeName();
+                cChannel *chan2 = srcGate2->getIncomingTransmissionChannel();
+                cModule* destModule = srcGate->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
+                std::string mobilityName = destModule->getSubmodule("mobility")->getNedTypeName();
+                //std::string mobilityName = destModule->getModuleByPath("mobility")->getNedTypeName();
                 double distance = 0;
                 if(mobilityName == "leosatellites.mobility.SatelliteMobility"){
-                    SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getModuleByPath("^.^.mobility"));
+                    SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility"));
                     distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
+                    distance = (distance/299792458)*1000; //ms
                 }
                 else if (mobilityName == "leosatellites.mobility.GroundStationMobility"){
-                    GroundStationMobility* destGSMobility = dynamic_cast<GroundStationMobility*>(destModule->getModuleByPath("^.^.mobility"));
+                    GroundStationMobility* destGSMobility = dynamic_cast<GroundStationMobility*>(destModule->getSubmodule("mobility"));
                     distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destGSMobility->getLUTPositionY(), destGSMobility->getLUTPositionX(), 0)*1000;
+                    distance = (distance/299792458)*1000; //ms
+                    configurator->addGSLinktoTopologyGraph(destModule->getIndex(), satNum, distance);
                 }
                 else{
                     throw cRuntimeError("Unsupported mobility used by module");
                 }
 
                 cPar& param = chan->par("delay");
-                std::string dString = std::to_string(distance/299792458) + "s";
+                std::string dString = std::to_string(distance) + "ms";
                 param.parse(dString.c_str());
+                chan->par("datarate").parse("10Mbps");
+
+                cPar& param2 = chan2->par("delay");
+                param2.parse(dString.c_str());
+                chan2->par("datarate").parse("10Mbps");
             }
         }
     }
@@ -298,20 +302,22 @@ void LeoChannelConstructor::setUpGSLinks()
                             outGateSat = gatePair1.second;
                             inGateGS = gatePair2.first;
                             outGateGS = gatePair2.second;
-                            //cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                            //cChannel *channel = channelType->create("channel");
-                            double distance = satMobility->getDistance(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)*1000;
-                            std::string dString = std::to_string(distance/299792458) + "s";
-                            createChannel(dString, outGateSat, inGateGS);
-                            createChannel(dString, outGateGS, inGateSat);
-                            //channel->par("delay").parse(dString.c_str());
-                            //channel->par("datarate").parse("10Mbps");
-                            //outGateSat->connectTo(inGateGS, channel);
-                            //cChannel *channel2 = channelType->create("channel");
-                            //channel2->par("delay").parse(dString.c_str());
-                            //channel2->par("datarate").parse("10Mbps");
-                            //outGateGS->connectTo(inGateSat, channel2);
-                            //add interface to interface table?
+                            cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
+                            cChannel *channel = channelType->create("channel");
+                            cChannel *channel2 = channelType->create("channel");
+                            outGateSat->connectTo(inGateGS, channel);
+                            outGateGS->connectTo(inGateSat, channel2);
+                            IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
+                            InterfaceEntry* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
+                            if(ie){
+                                configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
+                            }
+
+                            IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
+                            InterfaceEntry* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
+                            if(die){
+                                configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
+                            }
                         }
                 }
                 else{
@@ -326,18 +332,25 @@ void LeoChannelConstructor::setUpGSLinks()
                     inGateGS = gatePair2.first;
                     outGateGS = gatePair2.second;
                     //cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                    //cChannel *channel = channelType->create("channel");
-                    double distance = satMobility->getDistance(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)*1000;
-                    std::string dString = std::to_string(distance/299792458) + "s";
-                    createChannel(dString, outGateSat, inGateGS);
-                    createChannel(dString, outGateGS, inGateSat);
-                    //channel->par("delay").parse(dString.c_str());
-                    //channel->par("datarate").parse("10Mbps");
-                    //outGateSat->connectTo(inGateGS, channel);
-                    //cChannel *channel2 = channelType->create("channel");
-                    //channel2->par("delay").parse(dString.c_str());
-                    //channel2->par("datarate").parse("10Mbps");
-                    //outGateGS->connectTo(inGateSat, channel2);
+                    //double distance = satMobility->getDistance(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)*1000;
+                    //std::string dString = std::to_string((distance/299792458)*1000) + "ms";
+
+                    cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
+                    cChannel *channel = channelType->create("channel");
+                    cChannel *channel2 = channelType->create("channel");
+                    outGateSat->connectTo(inGateGS, channel);
+                    outGateGS->connectTo(inGateSat, channel2);
+                    IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
+                    InterfaceEntry* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
+                    if(ie){
+                        configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
+                    }
+
+                    IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
+                    InterfaceEntry* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
+                    if(die){
+                        configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
+                    }
                 }
             }
             else{ //remove link is exists
@@ -347,7 +360,6 @@ void LeoChannelConstructor::setUpGSLinks()
                         cGate* endGate = gsMod->gate("pppg$o", i)->getPathEndGate();
                         if((endGate->getOwnerModule()->getOwner()->getOwner() == satMod)){
                             gsMod->gate("pppg$o", i)->disconnect();
-                            break;
                         }
                     }
                 }
@@ -364,6 +376,7 @@ void LeoChannelConstructor::setUpGSLinks()
         }
     }
 }
+
 
 void LeoChannelConstructor::updatePPPModules(cModule *mod)
 {
@@ -427,6 +440,21 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
             interfaceData->joinMulticastGroup(Ipv4Address::ALL_HOSTS_MCAST);
             interfaceData->joinMulticastGroup(Ipv4Address::ALL_ROUTERS_MCAST);
 
+            //std::cout << "\n GATE IN NODE: " << srcGateOut->getPathEndGate()->getOwner()->getOwner()->getOwner()->getFullName() << endl;
+            //std::cout << "\n GATE OUT NODE: " << mod->getFullName() << endl;
+
+            cModule* destMod;
+
+            std::string gateOwnerName = srcGateOut->getPathEndGate()->getBaseName();
+            if(gateOwnerName == "pppg"){
+                destMod = srcGateOut->getPathEndGate()->getOwnerModule();
+            }
+            else{
+                destMod = srcGateOut->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
+            }
+
+            configurator->addNextHopInterface(mod, destMod, ie->getInterfaceId());
+            //add
             //configurator->assignAddress(InterfaceEntry1)
             //node->configureInterface(InterfaceEntry1)
             // configure routing table?

@@ -33,15 +33,26 @@ void LeoIpv4::initialize(int stage)
     Ipv4::initialize(stage);
     if (stage == INITSTAGE_LOCAL) {
         WATCH_MAP(nextHops);
-        //WATCH_MAP(nextHopsStr);
+        WATCH_MAP(nextHopsStr);
+
     }
+}
+
+void LeoIpv4::addKNextHop(int k, uint32 destinationAddr, uint32 nextInterfaceID){
+    kNextHops[k][destinationAddr] = nextInterfaceID;
 }
 
 void LeoIpv4::addNextHop(uint32 destinationAddr, uint32 nextInterfaceID){
     nextHops[destinationAddr] = nextInterfaceID;
 }
 
+void LeoIpv4::addNextHopStr(std::string destinationAddr, std::string nextInterfaceID){
+    nextHopsStr[destinationAddr] = nextInterfaceID;
+}
+
 void LeoIpv4::clearNextHops(){
+    kNextHops.clear();
+    nextHopsStr.clear();
     nextHops.clear();
 }
 
@@ -79,7 +90,7 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
         // use Ipv4 routing (lookup in routing table)
         //std::cout << "\nFinding best matching route for: " << destAddr.str() << endl;
         //const Ipv4Route *re = rt->findBestMatchingRoute(destAddr);
-        int interfaceID = nextHops[destAddr.getInt()];
+        int interfaceID = kNextHops[1][destAddr.getInt()];
         if (interfaceID) {
             //std::cout << "Adding route with the following dest ID: " << interfaceID << endl;
             //std::cout << "Gateway: " << re->getGateway() << endl;
@@ -88,7 +99,10 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
             //packet->addTagIfAbsent<NextHopAddressReq>()->setNextHopAddress(re->getGateway());
         }
         else{
-            std::cout << "Interface ID not found!" << endl;
+            std::cout << "\ndestAddr: " << destAddr.str() << endl;
+            std::cout << "\ndestAddr (int): " << destAddr.getInt() << endl;
+            std::cout << "\nInterface ID not found!: ID " << interfaceID << " at time: " << simTime() << endl;
+
         }
     }
 
