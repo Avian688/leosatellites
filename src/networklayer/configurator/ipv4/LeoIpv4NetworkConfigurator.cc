@@ -271,7 +271,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                     }
                     IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
                     for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
-                        InterfaceEntry *destinationIE = destIft->getInterface(j);
+                        NetworkInterface *destinationIE = destIft->getInterface(j);
                         if (!destinationIE->isLoopback()){
                             srcIpv4Mod->addNextHop(destinationIE->getIpv4Address().getInt(),nextHopID);
                             std::string str1 = destMod->getFullName();
@@ -308,7 +308,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                             int nextHopID = nextHopInterfaceMap.find(sourceMod)->second.find(nextHopMod)->second;
                             IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
                             for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
-                                InterfaceEntry *destinationIE = destIft->getInterface(j);
+                                NetworkInterface *destinationIE = destIft->getInterface(j);
                                 if (!destinationIE->isLoopback()){
                                     if(sourceNodeNum == 200){
                                         std::cout << "\n ADDING GS[0] HOPS" << endl;
@@ -381,12 +381,12 @@ int LeoIpv4NetworkConfigurator::getNextHopInterfaceID(cModule* sourceSatellite, 
     IInterfaceTable* nextHopIft = dynamic_cast<IInterfaceTable*>(nextHopSatellite->getSubmodule("interfaceTable"));
 
     for (int i = 0; i < sourceIft->getNumInterfaces(); i++) {
-        InterfaceEntry *srcIE = sourceIft->getInterface(i);
+        NetworkInterface *srcIE = sourceIft->getInterface(i);
         if (!(srcIE->isPointToPoint()))
             continue;
         cGate* srcGateMod = sourceSatellite->gate(srcIE->getNodeOutputGateId());
         for (int j = 0; j < nextHopIft->getNumInterfaces(); j++) {
-            InterfaceEntry *nextHopIE = nextHopIft->getInterface(j);
+            NetworkInterface *nextHopIE = nextHopIft->getInterface(j);
             if (!(nextHopIE->isPointToPoint()))
                 continue;
             cGate* nextHopGateMod = nextHopSatellite->gate(nextHopIE->getNodeInputGateId());
@@ -409,12 +409,12 @@ void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
                 IInterfaceTable* nextHopIft = dynamic_cast<IInterfaceTable*>(nextHopMod->getSubmodule("interfaceTable"));
 
                 for (int i = 0; i < sourceIft->getNumInterfaces(); i++) {
-                    InterfaceEntry *srcIE = sourceIft->getInterface(i);
+                    NetworkInterface *srcIE = sourceIft->getInterface(i);
                     if (!(srcIE->isPointToPoint()))
                         continue;
                     cGate* srcGateMod = mod->gate(srcIE->getNodeOutputGateId());
                     for (int j = 0; j < nextHopIft->getNumInterfaces(); j++) {
-                        InterfaceEntry *nextHopIE = nextHopIft->getInterface(j);
+                        NetworkInterface *nextHopIE = nextHopIft->getInterface(j);
                         if (!(nextHopIE->isPointToPoint()))
                             continue;
                         cGate* nextHopGateMod = nextHopMod->gate(nextHopIE->getNodeInputGateId());
@@ -436,11 +436,11 @@ double LeoIpv4NetworkConfigurator::computeLinkWeight(Link *link, const char *met
 double LeoIpv4NetworkConfigurator::computeWiredLinkWeight(Link *link, const char *metric, cXMLElement *parameters)
 {
     //std::cout << "\n Metric: " << metric << endl;
-    Topology::LinkOut *linkOut = static_cast<Topology::LinkOut *>(static_cast<Topology::Link *>(link));
+    Topology::Link *linkOut = static_cast<Topology::Link *>(static_cast<Topology::Link *>(link));
     if (!strcmp(metric, "hopCount"))
         return 1;
     else if (!strcmp(metric, "delay")) {
-        cDatarateChannel *transmissionChannel = dynamic_cast<cDatarateChannel *>(linkOut->getLocalGate()->findTransmissionChannel());
+        cDatarateChannel *transmissionChannel = dynamic_cast<cDatarateChannel *>(linkOut->getLinkOutLocalGate()->findTransmissionChannel());
         if (transmissionChannel != nullptr){
             return transmissionChannel->getDelay().dbl();
         }
@@ -448,7 +448,7 @@ double LeoIpv4NetworkConfigurator::computeWiredLinkWeight(Link *link, const char
             return minLinkWeight;
     }
     else if (!strcmp(metric, "dataRate")) {
-        cChannel *transmissionChannel = linkOut->getLocalGate()->findTransmissionChannel();
+        cChannel *transmissionChannel = linkOut->getLinkOutLocalGate()->findTransmissionChannel();
         if (transmissionChannel != nullptr) {
             double dataRate = transmissionChannel->getNominalDatarate();
             return dataRate != 0 ? 1 / dataRate : minLinkWeight;
@@ -457,11 +457,11 @@ double LeoIpv4NetworkConfigurator::computeWiredLinkWeight(Link *link, const char
             return minLinkWeight;
     }
     else if (!strcmp(metric, "errorRate")) {
-        cDatarateChannel *transmissionChannel = dynamic_cast<cDatarateChannel *>(linkOut->getLocalGate()->findTransmissionChannel());
+        cDatarateChannel *transmissionChannel = dynamic_cast<cDatarateChannel *>(linkOut->getLinkOutLocalGate()->findTransmissionChannel());
         if (transmissionChannel != nullptr) {
             InterfaceInfo *sourceInterfaceInfo = link->sourceInterfaceInfo;
             double bitErrorRate = transmissionChannel->getBitErrorRate();
-            double packetErrorRate = 1.0 - pow(1.0 - bitErrorRate, sourceInterfaceInfo->interfaceEntry->getMtu());
+            double packetErrorRate = 1.0 - pow(1.0 - bitErrorRate, sourceInterfaceInfo->networkInterface->getMtu());
             return minLinkWeight - log(1 - packetErrorRate);
         }
         else

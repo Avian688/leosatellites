@@ -26,7 +26,7 @@ class SatelliteNodeConfigurator : public Ipv4NodeConfigurator {
     public:
         virtual void prepareSatelliteLinkInterfaces();
         virtual void prepareLastInterface();
-        virtual void prepareInterface(InterfaceEntry *interfaceEntry) override;
+        virtual void prepareInterface(NetworkInterface *interfaceEntry) override;
         virtual void configureAllInterfaces() override;
     protected:
         virtual void initialize(int stage) override;

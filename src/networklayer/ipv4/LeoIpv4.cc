@@ -38,11 +38,11 @@ void LeoIpv4::initialize(int stage)
     }
 }
 
-void LeoIpv4::addKNextHop(int k, uint32 destinationAddr, uint32 nextInterfaceID){
+void LeoIpv4::addKNextHop(int k, uint32_t destinationAddr, uint32_t nextInterfaceID){
     kNextHops[k][destinationAddr] = nextInterfaceID;
 }
 
-void LeoIpv4::addNextHop(uint32 destinationAddr, uint32 nextInterfaceID){
+void LeoIpv4::addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID){
     nextHops[destinationAddr] = nextInterfaceID;
 }
 
@@ -59,8 +59,8 @@ void LeoIpv4::clearNextHops(){
 void LeoIpv4::routeUnicastPacket(Packet *packet)
 {
     //std::cout << "Routing Unicast Packet: " << packet->str() << endl;
-    const InterfaceEntry *fromIE = getSourceInterface(packet);
-    const InterfaceEntry *destIE = getDestInterface(packet);
+    const NetworkInterface *fromIE = getSourceInterface(packet);
+    const NetworkInterface *destIE = getDestInterface(packet);
     bool hopFound = false;
     // Initial Syn packet does not have either source or dest interface set
     Ipv4Address nextHopAddress = getNextHop(packet);

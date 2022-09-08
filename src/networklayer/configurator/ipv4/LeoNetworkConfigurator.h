@@ -64,7 +64,7 @@ class LeoNetworkConfigurator : public Ipv4NetworkConfigurator{
 //        virtual void addStaticRoutes(Topology& topology, cXMLElement *element);
         virtual void configure();
         virtual void reinvokeConfigure();
-        virtual void configureInterface(InterfaceEntry *interfaceEntry) override;
+        virtual void configureInterface(NetworkInterface *interfaceEntry) override;
         virtual void assignNewAddress(cModule *mod);
         virtual ~LeoNetworkConfigurator(){};
     protected:

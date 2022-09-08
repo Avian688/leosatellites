@@ -308,13 +308,13 @@ void LeoChannelConstructor::setUpGSLinks()
                             outGateSat->connectTo(inGateGS, channel);
                             outGateGS->connectTo(inGateSat, channel2);
                             IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
-                            InterfaceEntry* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
+                            NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
                             if(ie){
                                 configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
                             }
 
                             IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
-                            InterfaceEntry* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
+                            NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
                             if(die){
                                 configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
                             }
@@ -341,13 +341,13 @@ void LeoChannelConstructor::setUpGSLinks()
                     outGateSat->connectTo(inGateGS, channel);
                     outGateGS->connectTo(inGateSat, channel2);
                     IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
-                    InterfaceEntry* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
+                    NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
                     if(ie){
                         configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
                     }
 
                     IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
-                    InterfaceEntry* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
+                    NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
                     if(die){
                         configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
                     }
@@ -389,14 +389,15 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
                 submoduleVectorSize = submodule->getVectorSize();
         }
     }
-
+    mod->setSubmoduleVectorSize("ppp", submoduleVectorSize);
     cModule *module = nullptr;
     for(int i = 0; i < submoduleVectorSize; i++){
         if(!mod->getSubmodule("ppp", i)){
             cGate *srcGateOut = mod->gateHalf("pppg", cGate::OUTPUT, i);  //ADD BACK WITH RELEVANT CODE AT SOME POINT
             cGate *srcGateIn = mod->gateHalf("pppg", cGate::INPUT, i);
 
-            module = pppModuleType->create("ppp", mod, submoduleVectorSize, i);
+            module = pppModuleType->create("ppp", mod, i);
+
             cChannelType *idealChannelType = cChannelType::get("ned.IdealChannel");
             cChannel *idealChannel = idealChannelType->create("idealChannel");
             cChannel *idealChannel2 = idealChannelType->create("idealChannel");
@@ -426,13 +427,13 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
             module->scheduleStart(simTime());
 
             module->callInitialize();  //error here - trying to initisalise already existing module.
-            Ipv4Address address = Ipv4Address(addressBase.getInt() + uint32(module->getId()));
+            Ipv4Address address = Ipv4Address(addressBase.getInt() + uint32_t(module->getId()));
 
             //configurator->assignNewAddress(module);
-            InterfaceEntry* ie = dynamic_cast<InterfaceEntry*>(mod->getSubmodule("ppp", i));
-            prepareInterface(ie);
-            Ipv4InterfaceData *interfaceData = ie->getProtocolData<Ipv4InterfaceData>();
+            NetworkInterface* ie = dynamic_cast<NetworkInterface*>(mod->getSubmodule("ppp", i));
 
+            prepareInterface(ie);
+            Ipv4InterfaceData *interfaceData = ie->getProtocolDataForUpdate<Ipv4InterfaceData>();
             interfaceData->setIPAddress(address);
             interfaceData->setNetmask(netmask);
             ie->setBroadcast(true);
@@ -462,7 +463,7 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
     }
 }
 
-void LeoChannelConstructor::prepareInterface(InterfaceEntry *interfaceEntry)
+void LeoChannelConstructor::prepareInterface(NetworkInterface *interfaceEntry)
 {
     Ipv4InterfaceData *interfaceData = interfaceEntry->addProtocolData<Ipv4InterfaceData>();
     auto datarate = interfaceEntry->getDatarate();

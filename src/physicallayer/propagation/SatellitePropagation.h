@@ -18,7 +18,7 @@
 #ifndef __INET_SATELLITEPROPAGATION_H
 #define __INET_SATELLITEPROPAGATION_H
 
-#include "inet/physicallayer/base/packetlevel/PropagationBase.h"
+#include "inet/physicallayer/wireless/common/base/packetlevel/PropagationBase.h"
 
 namespace inet {
 
@@ -43,7 +43,7 @@ class SatellitePropagation : public PropagationBase
   public:
     SatellitePropagation();
 
-    virtual std::ostream& printToStream(std::ostream& stream, int level) const override;
+    virtual std::ostream& printToStream(std::ostream& stream, int level, int evFlags = 0) const override;
     virtual const IArrival *computeArrival(const ITransmission *transmission, IMobility *mobility) const override;
 };
 

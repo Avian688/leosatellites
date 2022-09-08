@@ -25,7 +25,7 @@
 #include "libnorad/ccoord.h"
 #include "libnorad/cEci.h"
 #include "../../libnorad/cEcef.h"
-#include "inet/physicallayer/common/packetlevel/Arrival.h"
+#include "inet/physicallayer/wireless/common/signal/Arrival.h"
 #include <math.h>
 namespace inet {
 
@@ -75,13 +75,13 @@ const Coord SatellitePropagation::computeArrivalPosition(const simtime_t time, c
     throw cRuntimeError("Movement approximation is not implemented");
 }
 
-std::ostream& SatellitePropagation::printToStream(std::ostream& stream, int level) const
+std::ostream& SatellitePropagation::printToStream(std::ostream& stream, int level, int evFlags) const
 {
-    stream << "SatellitePropagation";
+    stream << "ConstantSpeedPropagation";
     if (level <= PRINT_LEVEL_TRACE)
-        stream << ", ignoreMovementDuringTransmission = " << ignoreMovementDuringTransmission
-               << ", ignoreMovementDuringPropagation = " << ignoreMovementDuringPropagation
-               << ", ignoreMovementDuringReception = " << ignoreMovementDuringReception;
+        stream << EV_FIELD(ignoreMovementDuringTransmission)
+               << EV_FIELD(ignoreMovementDuringPropagation)
+               << EV_FIELD(ignoreMovementDuringReception);
     return PropagationBase::printToStream(stream, level);
 }
 

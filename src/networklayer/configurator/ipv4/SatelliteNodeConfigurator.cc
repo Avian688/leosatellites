@@ -37,7 +37,7 @@ void SatelliteNodeConfigurator::prepareLastInterface()
     prepareInterface(interfaceTable->getInterface(interfaceTable->getNumInterfaces()-1));
 }
 
-void SatelliteNodeConfigurator::prepareInterface(InterfaceEntry *interfaceEntry)
+void SatelliteNodeConfigurator::prepareInterface(NetworkInterface *interfaceEntry)
 {
     interfaceEntry->removeProtocolDataIfPresent<Ipv4InterfaceData>(); //TODO improve/remove
     Ipv4InterfaceData *interfaceData = interfaceEntry->addProtocolData<Ipv4InterfaceData>();

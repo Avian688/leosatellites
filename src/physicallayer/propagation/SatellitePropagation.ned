@@ -15,7 +15,7 @@
 
 package leosatellites.physicallayer.propagation;
 
-import inet.physicallayer.base.packetlevel.PropagationBase;
+import inet.physicallayer.wireless.common.base.packetlevel.PropagationBase;
 
 //
 // This propagation model computes the propagation time to be proportional to

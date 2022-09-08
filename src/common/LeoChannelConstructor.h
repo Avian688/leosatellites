@@ -6,7 +6,7 @@
 #include <inet/networklayer/common/L3AddressResolver.h>
 #include <inet/common/lifecycle/ILifecycle.h>
 #include <inet/networklayer/common/InterfaceTable.h>
-#include <inet/networklayer/common/InterfaceEntry.h>
+#include <inet/networklayer/common/NetworkInterface.h>
 #include <inet/linklayer/ppp/Ppp.h>
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
 #include "../networklayer/ipv4/LeoIpv4RoutingTable.h"
@@ -41,7 +41,7 @@ protected:
     virtual void updateChannels();
     virtual void setUpGSLinks();
     virtual void addPPPInterfaces();
-    virtual void prepareInterface(InterfaceEntry *interfaceEntry);
+    virtual void prepareInterface(NetworkInterface *interfaceEntry);
     void createChannel(std::string delay, cGate *gate1, cGate*gate2);
     void scheduleUpdate();
     virtual void finish() override;

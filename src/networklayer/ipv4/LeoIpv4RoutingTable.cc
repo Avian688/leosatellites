@@ -31,7 +31,7 @@ void LeoIpv4RoutingTable::configureRouterId()
         if (!strcmp(routerIdStr, "auto")) {    // non-"auto" cases already handled earlier
             // choose highest interface address as routerId
             for (int i = 0; i < ift->getNumInterfaces(); ++i) {
-                InterfaceEntry *ie = ift->getInterface(i);
+                NetworkInterface *ie = ift->getInterface(i);
                 if (!ie->isLoopback()) {
                     auto ipv4Data = ie->findProtocolData<Ipv4InterfaceData>();
                     if (ipv4Data && ipv4Data->getIPAddress().getInt() > routerId.getInt()) {
@@ -45,8 +45,8 @@ void LeoIpv4RoutingTable::configureRouterId()
               // if there is no interface with routerId yet, assign it to the loopback address;
               // TODO find out if this is a good practice, in which situations it is useful etc.
         if (getInterfaceByAddress(routerId) == nullptr) {
-            InterfaceEntry *lo0 = CHK(ift->findFirstLoopbackInterface());
-            auto ipv4Data = lo0->getProtocolData<Ipv4InterfaceData>();
+            NetworkInterface *lo0 = CHK(ift->findFirstLoopbackInterface());
+            auto ipv4Data = lo0->getProtocolDataForUpdate<Ipv4InterfaceData>();
             ipv4Data->setIPAddress(routerId);
             ipv4Data->setNetmask(Ipv4Address::ALLONES_ADDRESS);
         }

@@ -17,7 +17,7 @@
 #define INET_PHYSICALLAYER_UNITDISK_SATELLITEUNITDISKTRANSMITTER_H_
 
 #include "libnorad/ccoord.h"
-#include "inet/physicallayer/unitdisk/UnitDiskTransmitter.h"
+#include "inet/physicallayer/wireless/unitdisk/UnitDiskTransmitter.h"
 
 namespace inet {
 namespace physicallayer {

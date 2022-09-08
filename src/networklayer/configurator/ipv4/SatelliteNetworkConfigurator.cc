@@ -24,10 +24,10 @@
 #include "inet/common/ModuleAccess.h"
 #include "inet/common/stlutils.h"
 #include "inet/common/XMLUtils.h"
-#include "inet/networklayer/common/InterfaceEntry.h"
 #include "inet/networklayer/common/L3AddressResolver.h"
 #include "inet/networklayer/configurator/ipv4/Ipv4NetworkConfigurator.h"
 #include "inet/networklayer/ipv4/IIpv4RoutingTable.h"
+#include "inet/networklayer/ipv4/Ipv4RoutingTable.h"
 #include "inet/networklayer/configurator/base/NetworkConfiguratorBase.h"
 #include "mobility/SatSGP4Mobility.h"
 #include "mobility/LUTMotionMobility.h"
@@ -95,7 +95,7 @@ void SatelliteNetworkConfigurator::initialize(int stage)
     }
     timer = new cMessage("TopologyTimer");
     scheduleAt(0 + timerInterval, timer);  //Schedule reinvoking process.
-    NetworkConfiguratorBase::initialize(stage);
+    L3NetworkConfiguratorBase::initialize(stage);
     if (stage == INITSTAGE_LOCAL) {
         assignAddressesParameter = par("assignAddresses");
         assignUniqueAddresses = par("assignUniqueAddresses");
@@ -324,8 +324,7 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                 //Ground to satellite - make sure links are correct distance
                 else if(SatelliteMobility *destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility")))
                 {
-                    NoradA *destNoradModule = dynamic_cast<NoradA*>(destModule->getSubmodule("NoradModule", 0));
-                    //if(destSatMobility->getDistance(sourceLutMobility->getLUTPositionY(), sourceLutMobility->getLUTPositionX(), 0) >= 1123) //out of range angle
+                    NoradA *destNoradModule = dynamic_cast<NoradA*>(destModule->getSubmodule("NoradModule"));
                     if(!destNoradModule->isReachable(sourceLutMobility->getLUTPositionY(), sourceLutMobility->getLUTPositionX(), 0))
                     {
                         link->disable();
@@ -426,7 +425,7 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
         // check if adding the default routes would be ok (this is an optimization)
         if (addDefaultRoutesParameter && sourceNode->interfaceInfos.size() == 1 && sourceNode->interfaceInfos[0]->linkInfo->gatewayInterfaceInfo && sourceNode->interfaceInfos[0]->addDefaultRoute) {
             InterfaceInfo *sourceInterfaceInfo = static_cast<InterfaceInfo *>(sourceNode->interfaceInfos[0]);
-            InterfaceEntry *sourceInterfaceEntry = sourceInterfaceInfo->interfaceEntry;
+            NetworkInterface *sourceInterfaceEntry = sourceInterfaceInfo->networkInterface;
             InterfaceInfo *gatewayInterfaceInfo = static_cast<InterfaceInfo *>(sourceInterfaceInfo->linkInfo->gatewayInterfaceInfo);
             //InterfaceEntry *gatewayInterfaceEntry = gatewayInterfaceInfo->interfaceEntry;
 
@@ -474,22 +473,22 @@ void SatelliteNetworkConfigurator::addStaticRoutes(Topology& topology, cXMLEleme
                     link = (Link *)node->getPath(0);
                     if (node != sourceNode && !isBridgeNode(node) && link->sourceInterfaceInfo)
                         nextHopInterfaceInfo = static_cast<InterfaceInfo *>(link->sourceInterfaceInfo);
-                    node = (Node *)node->getPath(0)->getRemoteNode();
+                    node = (Node *)node->getPath(0)->getLinkOutRemoteNode();
                 }
 
                 // determine source interface
                 if (nextHopInterfaceInfo && link->destinationInterfaceInfo && link->destinationInterfaceInfo->addStaticRoute) {
-                    InterfaceEntry *sourceInterfaceEntry = link->destinationInterfaceInfo->interfaceEntry;
+                    NetworkInterface *sourceInterfaceEntry = link->destinationInterfaceInfo->networkInterface;
                     // add the same routes for all destination interfaces (IP packets are accepted from any interface at the destination)
                     for (size_t j = 0; j < destinationNode->interfaceInfos.size(); j++) {
                         InterfaceInfo *destinationInterfaceInfo = static_cast<InterfaceInfo *>(destinationNode->interfaceInfos[j]);
-                        std::string destinationFullPath = destinationInterfaceInfo->interfaceEntry->getInterfaceFullPath();
+                        std::string destinationFullPath = destinationInterfaceInfo->networkInterface->getInterfaceFullPath();
                         std::string destinationShortenedFullPath = destinationFullPath.substr(destinationFullPath.find('.') + 1);
                         if (!destinationInterfacesMatcher.matchesAny() &&
                             !destinationInterfacesMatcher.matches(destinationFullPath.c_str()) &&
                             !destinationInterfacesMatcher.matches(destinationShortenedFullPath.c_str()))
                             continue;
-                        InterfaceEntry *destinationInterfaceEntry = destinationInterfaceInfo->interfaceEntry;
+                        NetworkInterface *destinationInterfaceEntry = destinationInterfaceInfo->networkInterface;
                         Ipv4Address destinationAddress = destinationInterfaceInfo->getAddress();
                         Ipv4Address destinationNetmask = destinationInterfaceInfo->getNetmask();
                         if (!destinationInterfaceEntry->isLoopback() && !destinationAddress.isUnspecified()) {
@@ -548,7 +547,7 @@ void SatelliteNetworkConfigurator::extractTopology(Topology& topology)
         int networkId = node->getNetworkId();
         auto networkNodes = isolatedNetworks.find(networkId);
         if (networkNodes == isolatedNetworks.end()) {
-            std::vector<Node *> collection = {node};
+            std::vector<Node *> collection = { node };
             isolatedNetworks[networkId] = collection;
         }
         else
@@ -569,42 +568,38 @@ void SatelliteNetworkConfigurator::extractTopology(Topology& topology)
     }
 
     // extract links and interfaces
-    std::map<int, InterfaceEntry *> interfacesSeen;
+    std::map<int, NetworkInterface *> interfacesSeen;
     for (int i = 0; i < topology.getNumNodes(); i++) {
         Node *node = (Node *)topology.getNode(i);
         IInterfaceTable *interfaceTable = node->interfaceTable;
         if (interfaceTable) {
             for (int j = 0; j < interfaceTable->getNumInterfaces(); j++) {
-                InterfaceEntry *interfaceEntry = interfaceTable->getInterface(j);
-                if (!interfaceEntry->isLoopback() && interfacesSeen.find(interfaceEntry->getId()) == interfacesSeen.end()) {
+                NetworkInterface *networkInterface = interfaceTable->getInterface(j);
+                if (!networkInterface->isLoopback() && !containsKey(interfacesSeen, networkInterface->getId())) {
                     if (isBridgeNode(node))
-                        createInterfaceInfo(topology, node, nullptr, interfaceEntry);
+                        createInterfaceInfo(topology, node, nullptr, networkInterface);
                     else {
-                        bool linkPass = false;
-                        interfacesSeen[interfaceEntry->getId()] = interfaceEntry;
+                        interfacesSeen[networkInterface->getId()] = networkInterface;
                         // create a new network link
                         LinkInfo *linkInfo = new LinkInfo();
                         linkInfo->networkId = node->getNetworkId();
                         topology.linkInfos.push_back(linkInfo);
                         // store interface as belonging to the new network link
-                        InterfaceInfo *interfaceInfo = createInterfaceInfo(topology, node, isBridgeNode(node) ? nullptr : linkInfo, interfaceEntry);
+                        InterfaceInfo *interfaceInfo = createInterfaceInfo(topology, node, isBridgeNode(node) ? nullptr : linkInfo, networkInterface);
                         linkInfo->interfaceInfos.push_back(interfaceInfo);
                         // visit neighbors (and potentially the whole LAN, recursively)
-                        if(linkPass){
-                            if (isWirelessInterface(interfaceEntry)) {
+                        if (networkInterface->isWireless()) {
+                            std::vector<Node *> empty;
+                            auto wirelessId = getWirelessId(networkInterface);
+                            extractWirelessNeighbors(topology, wirelessId.c_str(), linkInfo, interfacesSeen, empty);
+                        }
+                        else {
+                            Topology::Link *linkOut = findLinkOut(node, networkInterface->getNodeOutputGateId());
+                            if (linkOut) {
                                 std::vector<Node *> empty;
-                                auto wirelessId = getWirelessId(interfaceEntry);
-                                extractWirelessNeighbors(topology, wirelessId.c_str(), linkInfo, interfacesSeen, empty);
-                            }
-                            else {
-                                Topology::LinkOut *linkOut = findLinkOut(node, interfaceEntry->getNodeOutputGateId());
-                                if (linkOut) {
-                                    std::vector<Node *> empty;
-                                    extractWiredNeighbors(topology, linkOut, linkInfo, interfacesSeen, empty);
-                                }
+                                extractWiredNeighbors(topology, linkOut, linkInfo, interfacesSeen, empty);
                             }
                         }
-
                     }
                 }
             }
@@ -615,36 +610,36 @@ void SatelliteNetworkConfigurator::extractTopology(Topology& topology)
     for (int i = 0; i < topology.getNumNodes(); i++) {
         Node *node = (Node *)topology.getNode(i);
         for (int j = 0; j < node->getNumOutLinks(); j++) {
-            Topology::LinkOut *linkOut = node->getLinkOut(j);
+            Topology::Link *linkOut = node->getLinkOut(j);
             Link *link = (Link *)linkOut;
-            Node *localNode = (Node *)linkOut->getLocalNode();
+            Node *localNode = (Node *)linkOut->getLinkOutLocalNode();
             if (localNode->interfaceTable)
-                link->sourceInterfaceInfo = findInterfaceInfo(localNode, localNode->interfaceTable->findInterfaceByNodeOutputGateId(linkOut->getLocalGateId()));
-            Node *remoteNode = (Node *)linkOut->getRemoteNode();
+                link->sourceInterfaceInfo = findInterfaceInfo(localNode, localNode->interfaceTable->findInterfaceByNodeOutputGateId(linkOut->getLinkOutLocalGateId()));
+            Node *remoteNode = (Node *)linkOut->getLinkOutRemoteNode();
             if (remoteNode->interfaceTable)
-                link->destinationInterfaceInfo = findInterfaceInfo(remoteNode, remoteNode->interfaceTable->findInterfaceByNodeInputGateId(linkOut->getRemoteGateId()));
+                link->destinationInterfaceInfo = findInterfaceInfo(remoteNode, remoteNode->interfaceTable->findInterfaceByNodeInputGateId(linkOut->getLinkOutRemoteGateId()));
         }
     }
 
     // collect wireless LAN interface infos into a map
-    std::map<std::string, std::vector<inet::NetworkConfiguratorBase::InterfaceInfo *> > wirelessIdToInterfaceInfosMap;
-    for (auto & entry : topology.interfaceInfos) {
-        inet::NetworkConfiguratorBase::InterfaceInfo *interfaceInfo = entry.second;
-        InterfaceEntry *interfaceEntry = interfaceInfo->interfaceEntry;
-        if (!interfaceEntry->isLoopback() && isWirelessInterface(interfaceEntry)) {
-            auto wirelessId = getWirelessId(interfaceEntry);
+    std::map<std::string, std::vector<InterfaceInfo *>> wirelessIdToInterfaceInfosMap;
+    for (auto& entry : topology.interfaceInfos) {
+        InterfaceInfo *interfaceInfo = (inet::Ipv4NetworkConfigurator::InterfaceInfo *)entry.second;
+        NetworkInterface *networkInterface = interfaceInfo->networkInterface;
+        if (!networkInterface->isLoopback() && networkInterface->isWireless()) {
+            auto wirelessId = getWirelessId(networkInterface);
             wirelessIdToInterfaceInfosMap[wirelessId].push_back(interfaceInfo);
         }
     }
 
     // add extra links between all pairs of wireless interfaces within a LAN (full graph)
-    for (auto & entry : wirelessIdToInterfaceInfosMap) {
-        std::vector<inet::NetworkConfiguratorBase::InterfaceInfo *>& interfaceInfos = entry.second;
+    for (auto& entry : wirelessIdToInterfaceInfosMap) {
+        std::vector<InterfaceInfo *>& interfaceInfos = entry.second;
         for (size_t i = 0; i < interfaceInfos.size(); i++) {
-            inet::NetworkConfiguratorBase::InterfaceInfo *interfaceInfoI = interfaceInfos.at(i);
+            InterfaceInfo *interfaceInfoI = interfaceInfos.at(i);
             for (size_t j = i + 1; j < interfaceInfos.size(); j++) {
                 // assume bidirectional links
-                inet::NetworkConfiguratorBase::InterfaceInfo *interfaceInfoJ = interfaceInfos.at(j);
+                InterfaceInfo *interfaceInfoJ = interfaceInfos.at(j);
                 Link *linkIJ = new Link();
                 linkIJ->sourceInterfaceInfo = interfaceInfoI;
                 linkIJ->destinationInterfaceInfo = interfaceInfoJ;
@@ -658,7 +653,7 @@ void SatelliteNetworkConfigurator::extractTopology(Topology& topology)
     }
 
     // determine gatewayInterfaceInfo for all linkInfos
-    for (auto & linkInfo : topology.linkInfos)
+    for (auto& linkInfo : topology.linkInfos)
         linkInfo->gatewayInterfaceInfo = determineGatewayForLink(linkInfo);
 }
 
@@ -666,20 +661,20 @@ void SatelliteNetworkConfigurator::extractTopology(Topology& topology)
  * extractWiredNeighbours method. The semantics have not changed from the Ipv4NetworkConfigurator. This method extracts
  * all wired link connections from a node.
  */
-void SatelliteNetworkConfigurator::extractWiredNeighbors(Topology& topology, Topology::LinkOut *linkOut, LinkInfo *linkInfo, std::map<int, InterfaceEntry *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited)
+void SatelliteNetworkConfigurator::extractWiredNeighbors(Topology& topology, Topology::Link *linkOut, LinkInfo *linkInfo, std::map<int, NetworkInterface *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited)
 {
-    Node *node = (Node *)linkOut->getRemoteNode();
-    int inputGateId = linkOut->getRemoteGateId();
+    Node *node = (Node *)linkOut->getLinkOutRemoteNode();
+    int inputGateId = linkOut->getLinkOutRemoteGateId();
     IInterfaceTable *interfaceTable = node->interfaceTable;
     if (!isBridgeNode(node)) {
-        InterfaceEntry *interfaceEntry = interfaceTable->findInterfaceByNodeInputGateId(inputGateId);
-        if (!interfaceEntry) {
+        NetworkInterface *networkInterface = interfaceTable->findInterfaceByNodeInputGateId(inputGateId);
+        if (!networkInterface) {
             // no such interface (node is probably down); we should probably get the information from our (future) internal database
         }
-        else if (interfacesSeen.find(interfaceEntry->getId()) == interfacesSeen.end()) {
-            InterfaceInfo *neighborInterfaceInfo = createInterfaceInfo(topology, node, linkInfo, interfaceEntry);
+        else if (!containsKey(interfacesSeen, networkInterface->getId())) {
+            InterfaceInfo *neighborInterfaceInfo = createInterfaceInfo(topology, node, linkInfo, networkInterface);
             linkInfo->interfaceInfos.push_back(neighborInterfaceInfo);
-            interfacesSeen[interfaceEntry->getId()] = interfaceEntry;
+            interfacesSeen[networkInterface->getId()] = networkInterface;
         }
     }
     else {
@@ -692,20 +687,20 @@ void SatelliteNetworkConfigurator::extractWiredNeighbors(Topology& topology, Top
  * extractWirelessNeighbors method. The semantics has not changed from the Ipv4NetworkConfigurator. This method extracts
  * all wireless link connections from a node.
  */
-void SatelliteNetworkConfigurator::extractWirelessNeighbors(Topology& topology, const char *wirelessId, LinkInfo *linkInfo, std::map<int, InterfaceEntry *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited)
+void SatelliteNetworkConfigurator::extractWirelessNeighbors(Topology& topology, const char *wirelessId, LinkInfo *linkInfo, std::map<int, NetworkInterface *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited)
 {
     for (int nodeIndex = 0; nodeIndex < topology.getNumNodes(); nodeIndex++) {
         Node *node = (Node *)topology.getNode(nodeIndex);
         IInterfaceTable *interfaceTable = node->interfaceTable;
         if (interfaceTable) {
             for (int j = 0; j < interfaceTable->getNumInterfaces(); j++) {
-                InterfaceEntry *interfaceEntry = interfaceTable->getInterface(j);
-                if (!interfaceEntry->isLoopback() && interfacesSeen.find(interfaceEntry->getId()) == interfacesSeen.end() && isWirelessInterface(interfaceEntry)) {
-                    if (getWirelessId(interfaceEntry) == wirelessId) {
+                NetworkInterface *networkInterface = interfaceTable->getInterface(j);
+                if (!networkInterface->isLoopback() && !containsKey(interfacesSeen, networkInterface->getId()) && networkInterface->isWireless()) {
+                    if (getWirelessId(networkInterface) == wirelessId) {
                         if (!isBridgeNode(node)) {
-                            InterfaceInfo *interfaceInfo = createInterfaceInfo(topology, node, linkInfo, interfaceEntry);
+                            InterfaceInfo *interfaceInfo = createInterfaceInfo(topology, node, linkInfo, networkInterface);
                             linkInfo->interfaceInfos.push_back(interfaceInfo);
-                            interfacesSeen[interfaceEntry->getId()] = interfaceEntry;
+                            interfacesSeen[networkInterface->getId()] = networkInterface;
                         }
                         else {
                             if (!contains(deviceNodesVisited, node))
@@ -722,19 +717,19 @@ void SatelliteNetworkConfigurator::extractWirelessNeighbors(Topology& topology, 
  * extractDeviceNeighbors method. The semantics have not changed from the Ipv4NetworkConfigurator. This method extracts
  * the neighbors from a given node.
  */
-void SatelliteNetworkConfigurator::extractDeviceNeighbors(Topology& topology, Node *node, LinkInfo *linkInfo, std::map<int, InterfaceEntry *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited)
+void SatelliteNetworkConfigurator::extractDeviceNeighbors(Topology& topology, Node *node, LinkInfo *linkInfo, std::map<int, NetworkInterface *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited)
 {
     deviceNodesVisited.push_back(node);
     IInterfaceTable *interfaceTable = node->interfaceTable;
     if (interfaceTable) {
         // switch and access point
         for (int i = 0; i < interfaceTable->getNumInterfaces(); i++) {
-            InterfaceEntry *interfaceEntry = interfaceTable->getInterface(i);
-            if (!interfaceEntry->isLoopback() && interfacesSeen.find(interfaceEntry->getId()) == interfacesSeen.end()) {
-                if (isWirelessInterface(interfaceEntry))
-                    extractWirelessNeighbors(topology, getWirelessId(interfaceEntry).c_str(), linkInfo, interfacesSeen, deviceNodesVisited);
+            NetworkInterface *networkInterface = interfaceTable->getInterface(i);
+            if (!networkInterface->isLoopback() && !containsKey(interfacesSeen, networkInterface->getId())) {
+                if (networkInterface->isWireless())
+                    extractWirelessNeighbors(topology, getWirelessId(networkInterface).c_str(), linkInfo, interfacesSeen, deviceNodesVisited);
                 else {
-                    Topology::LinkOut *linkOut = findLinkOut(node, interfaceEntry->getNodeOutputGateId());
+                    Topology::Link *linkOut = findLinkOut(node, networkInterface->getNodeOutputGateId());
                     if (linkOut)
                         extractWiredNeighbors(topology, linkOut, linkInfo, interfacesSeen, deviceNodesVisited);
                 }
@@ -744,7 +739,7 @@ void SatelliteNetworkConfigurator::extractDeviceNeighbors(Topology& topology, No
     else {
         // hub and bus
         for (int i = 0; i < node->getNumOutLinks(); i++) {
-            Topology::LinkOut *linkOut = node->getLinkOut(i);
+            Topology::Link *linkOut = node->getLinkOut(i);
             extractWiredNeighbors(topology, linkOut, linkInfo, interfacesSeen, deviceNodesVisited);
         }
     }

@@ -15,9 +15,9 @@
 
 package leosatellites.networklayer.configurator.ipv4;
 
-import inet.networklayer.configurator.base.NetworkConfiguratorBase;
+import inet.networklayer.configurator.base.L3NetworkConfiguratorBase;
 
-simple LeoIpv4NetworkConfigurator extends NetworkConfiguratorBase
+simple LeoIpv4NetworkConfigurator extends L3NetworkConfiguratorBase
 {
     parameters:
         @class(inet::LeoIpv4NetworkConfigurator);

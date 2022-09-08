@@ -25,12 +25,12 @@ protected:
     virtual void initialize(int stage) override;
     virtual void routeUnicastPacket(Packet *packet) override;
     virtual void stop() override;
-    std::map<uint32,uint32> nextHops;   //Destination Address (int format) -> Interface ID
+    std::map<uint32_t,uint32_t> nextHops;   //Destination Address (int format) -> Interface ID
     std::map<std::string,std::string> nextHopsStr;   //Destination Address (int format) -> Interface ID
-    std::map<int, std::map<uint32,uint32>> kNextHops;
+    std::map<int, std::map<uint32_t,uint32_t>> kNextHops;
 public:
-    void addKNextHop(int k, uint32 destinationAddr, uint32 nextInterfaceID);
-    void addNextHop(uint32 destinationAddr, uint32 nextInterfaceID);
+    void addKNextHop(int k, uint32_t destinationAddr, uint32_t nextInterfaceID);
+    void addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID);
     void addNextHopStr(std::string destinationAddr, std::string nextInterfaceID);
     void clearNextHops();
     LeoIpv4();

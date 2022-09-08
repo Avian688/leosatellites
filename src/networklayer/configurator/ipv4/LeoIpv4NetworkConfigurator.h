@@ -21,7 +21,7 @@
 #include <queue>
 #include <tuple>
 #include <inet/common/Topology.h>
-#include <inet/networklayer/configurator/base/NetworkConfiguratorBase.h>
+#include "inet/networklayer/configurator/base/L3NetworkConfiguratorBase.h"
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
 
 #include "../../ipv4/LeoIpv4.h"
@@ -31,7 +31,7 @@
 #include <chrono> //TODO remove if not using analysing runtime
 
 namespace inet {
-class INET_API LeoIpv4NetworkConfigurator : public NetworkConfiguratorBase {
+class INET_API LeoIpv4NetworkConfigurator : public L3NetworkConfiguratorBase {
 protected:
     //typedef igraph_error_type_t igraph_error_t;
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }

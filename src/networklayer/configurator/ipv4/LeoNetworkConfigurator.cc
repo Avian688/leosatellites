@@ -24,7 +24,6 @@
 #include "inet/common/ModuleAccess.h"
 #include "inet/common/stlutils.h"
 #include "inet/common/XMLUtils.h"
-#include "inet/networklayer/common/InterfaceEntry.h"
 #include "inet/networklayer/common/L3AddressResolver.h"
 #include "inet/networklayer/configurator/ipv4/Ipv4NetworkConfigurator.h"
 #include "inet/networklayer/ipv4/IIpv4RoutingTable.h"
@@ -34,6 +33,7 @@
 #include "../../../mobility/SatelliteMobility.h"
 #include "../../../mobility/NoradA.h"
 #include "../../../libnorad/cEcef.h"
+#include "../../ipv4/LeoIpv4RoutingTable.h"
 #include "inet/common/packet/chunk/ByteCountChunk.h"
 #include "inet/common/ProtocolTag_m.h"
 #ifdef WITH_RADIO
@@ -46,7 +46,6 @@
 #include "inet/physicallayer/contract/packetlevel/IRadioMedium.h"
 #include "inet/physicallayer/contract/packetlevel/SignalTag_m.h"
 #include "inet/networklayer/ipv4/Ipv4RoutingTable.h"
-#include "../../ipv4/LeoIpv4RoutingTable.h"
 #endif
 Define_Module(LeoNetworkConfigurator);
 namespace inet {
@@ -95,7 +94,7 @@ void LeoNetworkConfigurator::initialize(int stage)
     }
     timer = new cMessage("TopologyTimer");
     scheduleAt(0 + timerInterval, timer);  //Schedule reinvoking process.
-    NetworkConfiguratorBase::initialize(stage);
+    L3NetworkConfiguratorBase::initialize(stage);
     if (stage == INITSTAGE_LOCAL) {
         assignAddressesParameter = par("assignAddresses");
         assignUniqueAddresses = par("assignUniqueAddresses");
@@ -136,7 +135,7 @@ void LeoNetworkConfigurator::configure(){
     configureAllRoutingTables();
 }
 
-void LeoNetworkConfigurator::configureInterface(InterfaceEntry *interfaceEntry)
+void LeoNetworkConfigurator::configureInterface(NetworkInterface *interfaceEntry)
 {
     if(linksEstablished){
         ensureConfigurationComputed(topology);
@@ -260,17 +259,17 @@ void LeoNetworkConfigurator::assignNewAddress(cModule *mod)
     Ipv4Address netmask = Ipv4Address("255.0.0.0");
     IInterfaceTable *interfaceTable;
 
-    Ipv4Address myAddress = Ipv4Address(addressBase.getInt() + uint32(mod->getId()));
+    Ipv4Address myAddress = Ipv4Address(addressBase.getInt() + uint32_t(mod->getId()));
 
     cStringTokenizer interfaceTokenizer(interfaces.c_str());
     const char *ifname;
     uint32_t loopbackAddr = Ipv4Address::LOOPBACK_ADDRESS.getInt();
     while ((ifname = interfaceTokenizer.nextToken()) != nullptr) {
-        InterfaceEntry *ie = interfaceTable->findInterfaceByName(ifname);
+        NetworkInterface *ie = interfaceTable->findInterfaceByName(ifname);
         if (!ie)
             throw cRuntimeError("No such interface '%s'", ifname);
 
-        auto ipv4Data = ie->getProtocolData<Ipv4InterfaceData>();
+        auto ipv4Data = ie->getProtocolDataForUpdate<Ipv4InterfaceData>();
         // assign IP Address to all connected interfaces
         if (ie->isLoopback()) {
             ipv4Data->setIPAddress(Ipv4Address(loopbackAddr++));

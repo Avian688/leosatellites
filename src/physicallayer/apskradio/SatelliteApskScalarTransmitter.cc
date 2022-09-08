@@ -17,8 +17,8 @@
 
 #include "SatelliteApskScalarTransmission.h"
 #include "inet/mobility/contract/IMobility.h"
-#include "inet/physicallayer/apskradio/packetlevel/ApskPhyHeader_m.h"
-#include "inet/physicallayer/contract/packetlevel/RadioControlInfo_m.h"
+#include "inet/physicallayer/wireless/apsk/packetlevel/ApskPhyHeader_m.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/RadioControlInfo_m.h"
 
 #include "mobility/LUTMotionMobility.h"
 #include "mobility/SatSGP4Mobility.h"
