@@ -17,10 +17,10 @@
 
 #include "SatelliteUnitDiskTransmission.h"
 #include "inet/mobility/contract/IMobility.h"
-#include "inet/physicallayer/contract/packetlevel/SignalTag_m.h"
-#include "inet/physicallayer/unitdisk/UnitDiskPhyHeader_m.h"
-#include "inet/physicallayer/unitdisk/UnitDiskTransmission.h"
-#include "inet/physicallayer/unitdisk/UnitDiskTransmitter.h"
+#include "inet/physicallayer/wireless/common/contract/packetlevel/SignalTag_m.h"
+#include "inet/physicallayer/wireless/unitdisk/UnitDiskPhyHeader_m.h"
+#include "inet/physicallayer/wireless/unitdisk/UnitDiskTransmission.h"
+#include "inet/physicallayer/wireless/unitdisk/UnitDiskTransmitter.h"
 #include "mobility/LUTMotionMobility.h"
 #include "mobility/SatSGP4Mobility.h"
 #include "../../mobility/GroundStationMobility.h"
@@ -57,9 +57,9 @@ const ITransmission *SatelliteUnitDiskTransmitter::createTransmission(const IRad
     auto endOrientation = mobility->getCurrentAngularPosition();
 
     //Make sure that the transmitter is either a satellite or ground station.
-    if (SatelliteMobility *sgp4Mobility = dynamic_cast<SatelliteMobility *>(mobility)) { //The node is a satellite (550km altitude)
-        longLatStartPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), 550);
-        longLatEndPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), 550);
+    if (SatelliteMobility *sgp4Mobility = dynamic_cast<SatelliteMobility *>(mobility)) { //The node is a satellite
+        longLatStartPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), sgp4Mobility->getAltitude());
+        longLatEndPosition = cCoordGeo(sgp4Mobility->getLatitude(), sgp4Mobility->getLongitude(), sgp4Mobility->getAltitude());
     } else if (GroundStationMobility *lutMobility = dynamic_cast<GroundStationMobility *>(mobility)) {  //The node transmitter is a ground station
         longLatStartPosition = cCoordGeo(lutMobility->getLUTPositionY(), lutMobility->getLUTPositionX(), 0);
         longLatEndPosition = cCoordGeo(lutMobility->getLUTPositionY(), lutMobility->getLUTPositionX(), 0);

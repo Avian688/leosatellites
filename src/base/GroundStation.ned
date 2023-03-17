@@ -18,7 +18,7 @@ import leosatellites.mobility.GroundStationMobility;
 import inet.node.inet.WirelessHost;
 import inet.node.inet.StandardHost;
 
-module GroundStation extends WirelessHost
+module GroundStation extends WirelessHost//WirelessHost
 {
     parameters:
         string cityName = default("");

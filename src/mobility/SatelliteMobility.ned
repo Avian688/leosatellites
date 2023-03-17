@@ -8,5 +8,5 @@ import os3.mobility.SatSGP4Mobility;
 simple SatelliteMobility extends SatSGP4Mobility
 {
     parameters:
-        @class(SatelliteMobility);
+        @class("inet::SatelliteMobility");
 }

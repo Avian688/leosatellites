@@ -18,6 +18,7 @@
 
 #include "inet/networklayer/configurator/ipv4/Ipv4NetworkConfigurator.h"
 #include "inet/networklayer/configurator/base/NetworkConfiguratorBase.h"
+#include "inet/common/packet/chunk/ByteCountChunk.h"
 
 namespace inet {
 
@@ -69,10 +70,10 @@ class SatelliteNetworkConfigurator : public Ipv4NetworkConfigurator{
         cMessage * timer = nullptr;
         bool enableInterSatelliteLinksParameter = true;
         virtual void extractTopology(Topology& topology);
-        virtual void extractWiredNeighbors(Topology& topology, Topology::LinkOut *linkOut, LinkInfo *linkInfo, std::map<int, InterfaceEntry *>& interfacesSeen, std::vector<Node *>& nodesVisited);
-        virtual void extractWirelessNeighbors(Topology& topology, const char *wirelessId, LinkInfo *linkInfo, std::map<int, InterfaceEntry *>& interfacesSeen, std::vector<Node *>& nodesVisited);
-        virtual void extractDeviceNeighbors(Topology& topology, Node *node, LinkInfo *linkInfo, std::map<int, InterfaceEntry *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited);
-        virtual double computeWirelessLinkWeight(Link *link, const char *metric, cXMLElement *parameters);
+        virtual void extractWiredNeighbors(Topology& topology, Topology::Link *linkOut, LinkInfo *linkInfo, std::map<int, NetworkInterface *>& interfacesSeen, std::vector<Node *>& nodesVisited);
+        virtual void extractWirelessNeighbors(Topology& topology, const char *wirelessId, LinkInfo *linkInfo, std::map<int, NetworkInterface *>& interfacesSeen, std::vector<Node *>& nodesVisited);
+        virtual void extractDeviceNeighbors(Topology& topology, Node *node, LinkInfo *linkInfo, std::map<int, NetworkInterface *>& interfacesSeen, std::vector<Node *>& deviceNodesVisited);
+        virtual double computeWirelessLinkWeight(Link *link, const char *metric, cXMLElement *parameters) override;
         virtual void handleMessage(cMessage *msg) override;
         virtual void initialize(int stage) override;
 

@@ -15,7 +15,7 @@
 
 #include "SatelliteApskScalarTransmission.h"
 
-#include "inet/physicallayer/apskradio/packetlevel/ApskScalarTransmission.h"
+#include "inet/physicallayer/wireless/apsk/packetlevel/ApskScalarTransmission.h"
 namespace inet {
 
 namespace physicallayer {

@@ -15,7 +15,7 @@
 
 package leosatellites.physicallayer.unitdisk;
 
-import inet.physicallayer.unitdisk.UnitDiskTransmitter;
+import inet.physicallayer.wireless.unitdisk.UnitDiskTransmitter;
 
 //-----------------------------------------------------
 // This model creates a SatelliteUnitDiskTransmission which stores the longitude, latitude and altitude of a given transmitter.

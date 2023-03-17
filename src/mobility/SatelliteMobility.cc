@@ -7,6 +7,8 @@
 #include "INorad.h"
 #include "NoradA.h"
 
+namespace inet {
+
 Define_Module(SatelliteMobility);
 
 SatelliteMobility::SatelliteMobility()
@@ -20,12 +22,13 @@ SatelliteMobility::SatelliteMobility()
 void SatelliteMobility::initialize(int stage)
 {
     // noradModule must be initialized before LineSegmentsMobilityBase calling setTargetPosition() in its initialization at stage 1
-    LineSegmentsMobilityBase::initialize(stage);
-    if (stage == 1) {
-        noradModule->initializeMobility(nextChange);
+    //simTime()
+    initilised = false;
+    if (stage == INITSTAGE_PHYSICAL_ENVIRONMENT) {
+        noradModule->initializeMobility(0);
+        //noradModule->initializeMobility(nextChange);
     }
-
-
+    LineSegmentsMobilityBase::initialize(stage);
     noradModule = check_and_cast< INorad* >(getParentModule()->getSubmodule("NoradModule"));
     if (noradModule == nullptr) {
         error("Error in SatSGP4Mobility::initializeMobility(): Cannot find module Norad.");
@@ -34,18 +37,31 @@ void SatelliteMobility::initialize(int stage)
     //std::time_t timestamp = std::time(nullptr);       // get current time as an integral value holding the num of secs
     std::time_t timestamp =  1619119189;  //8:20PM 22/04/2021                                             // since 00:00, Jan 1 1970 UTC
     std::tm* currentTime = std::gmtime(&timestamp);   // convert timestamp into structure holding a calendar date and time
-    noradModule->INorad::setJulian(currentTime);
+    noradModule->setJulian(currentTime);
 
     mapX = std::atoi(getParentModule()->getParentModule()->getDisplayString().getTagArg("bgb", 0));
     mapY = std::atoi(getParentModule()->getParentModule()->getDisplayString().getTagArg("bgb", 1));
 
     EV << "initializing SatSGP4Mobility stage " << stage << endl;
     WATCH(lastPosition);
+    refreshDisplay();
 }
 
 void SatelliteMobility::initializePosition()
 {
-    nextChange = simTime();
+    //nextChange = simTime();
+    LineSegmentsMobilityBase::initializePosition();
+    //nextChange = simTime(); //change this! TODO
+    //LineSegmentsMobilityBase::initializePosition();
+    //lastUpdate = simTime();
+    //scheduleUpdate();
+}
+
+void SatelliteMobility::setInitialPosition()
+{
+    lastPosition.x = mapX * noradModule->getLongitude() / 360 + (mapX / 2);
+    lastPosition.x = static_cast<int>(lastPosition.x) % static_cast<int>(mapX);
+    lastPosition.y = ((-mapY * noradModule->getLatitude()) / 180) + (mapY / 2);
 }
 
 bool SatelliteMobility::isOnSameOrbitalPlane(double raan2, double inclination2)
@@ -84,6 +100,11 @@ double SatelliteMobility::getDistance(const double& refLatitude, const double& r
     return noradModule->getDistance(refLatitude, refLongitude, refAltitude);
 }
 
+bool SatelliteMobility::isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude) const
+{
+    return noradModule->isReachable(refLatitude, refLongitude, refAltitude);
+}
+
 double SatelliteMobility::getLongitude() const
 {
     return noradModule->getLongitude();
@@ -96,23 +117,30 @@ double SatelliteMobility::getLatitude() const
 
 void SatelliteMobility::setTargetPosition()
 {
-    nextChange += updateInterval.dbl();
-    noradModule->updateTime(nextChange);
+    //nextChange += updateInterval.dbl();
+    noradModule->updateTime(simTime());
+//    lastPosition.x = mapX * noradModule->getLongitude() / 360 + (mapX / 2);
+//    lastPosition.x = static_cast<int>(lastPosition.x) % static_cast<int>(mapX);
+//    lastPosition.y = ((-mapY * noradModule->getLatitude()) / 180) + (mapY / 2);
+//    targetPosition.x = lastPosition.x;
+//    targetPosition.y = lastPosition.y;// + updateInterval.dbl();
+    //noradModule->updateTime(simTime());
     lastPosition.x = mapX * noradModule->getLongitude() / 360 + (mapX / 2);
     lastPosition.x = static_cast<int>(lastPosition.x) % static_cast<int>(mapX);
     lastPosition.y = ((-mapY * noradModule->getLatitude()) / 180) + (mapY / 2);
     targetPosition.x = lastPosition.x;
     targetPosition.y = lastPosition.y;
+    nextChange =  simTime() + updateInterval;
 }
 
 void SatelliteMobility::move()
 {
     LineSegmentsMobilityBase::move();
-    raiseErrorIfOutside();
+    //raiseErrorIfOutside();
 }
 
 void SatelliteMobility::fixIfHostGetsOutside()
 {
     raiseErrorIfOutside();
 }
-
+} // namespace inet

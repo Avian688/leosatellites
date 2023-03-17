@@ -16,7 +16,7 @@
 #ifndef OS3_PHYSICALLAYER_APSKRADIO_SATELLITEAPSKSCALARTRANSMITTER_H_
 #define OS3_PHYSICALLAYER_APSKRADIO_SATELLITEAPSKSCALARTRANSMITTER_H_
 
-#include "inet/physicallayer/apskradio/packetlevel/ApskScalarTransmitter.h"
+#include "inet/physicallayer/wireless/apsk/packetlevel/ApskScalarTransmitter.h"
 
 namespace inet {
 namespace physicallayer {

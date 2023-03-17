@@ -23,13 +23,12 @@
 // This class accepts a single satellite's Keplerian elements and provides information
 // regarding the satellite's orbit such as period, axis length,
 // ECI coordinates/velocity, etc., using the SGP4/SDP4 orbital models.
-cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion, double ecc, double incl, double meanAnom, double bstarA, double dragA, int phaseOffset, int satIndex, int planes, int satPerPlane) :
+cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double altitude, double ecc, double incl, double meanAnom, double bstarA, double dragA, int phaseOffset, int satIndex, int planes, int satPerPlane) :
    m_pNoradModel(NULL)
 {
    satName = satNameA;
    epochYear = epochY;
    epochDay = epochD;
-   meanMotion = mMotion;
    eccentricity = ecc;
    inclination = incl;
    meanAnomaly = meanAnom;
@@ -42,15 +41,13 @@ cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double mMotion
    raan = ((360.0/planes)*currentPlane) * RADS_PER_DEG; //RAAN value, uniformly created so that there are equally spaced orbital planes for even coverage.
    double phaseOffsetVal = ((360.0/satPerPlane)*(phaseOffset/planes))*currentPlane;
    meanAnomaly = (((360.0/satPerPlane)*planeIndex))*RADS_PER_DEG; //Denotes the position of a satellite within its plane.
-   if (epochYear < 57)
-      epochYear += 2000;
-   else
-      epochYear += 1900;
 
    m_jdEpoch = cJulian(epochYear, epochDay);
 
    m_secPeriod = -1.0;
 
+   double velocity = sqrt(GM/(XKMPER_WGS72+altitude));
+   meanMotion = SEC_PER_DAY/((TWOPI*(XKMPER_WGS72+altitude))/velocity);
    // Recover the original mean motion and semimajor axis from the
    // input elements.
    const double mm     = meanMotion;

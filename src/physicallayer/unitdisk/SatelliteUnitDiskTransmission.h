@@ -17,7 +17,7 @@
 #define OS3_PHYSICALLAYER_UNITDISK_SATELLITEUNITDISKTRANSMISSION_H_
 
 #include "libnorad/ccoord.h"
-#include "inet/physicallayer/unitdisk/UnitDiskTransmission.h"
+#include "inet/physicallayer/wireless/unitdisk/UnitDiskTransmission.h"
 
 namespace inet {
 namespace physicallayer {

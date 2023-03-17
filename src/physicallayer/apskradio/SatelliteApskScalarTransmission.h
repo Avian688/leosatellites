@@ -17,7 +17,7 @@
 #define OS3_PHYSICALLAYER_APSKRADIO_SATELLITEAPSKSCALARTRANSMISSION_H_
 
 #include "libnorad/ccoord.h"
-#include "inet/physicallayer/apskradio/packetlevel/ApskScalarTransmission.h"
+#include "inet/physicallayer/wireless/apsk/packetlevel/ApskScalarTransmission.h"
 
 namespace inet {
 
