@@ -38,7 +38,7 @@ void LeoIpv4NetworkLayer::updateDisplayString() const
         }
         return result.c_str();
     });
-    getDisplayString().setTagArg("t", 0, text);
+    getDisplayString().setTagArg("t", 0, text.c_str());
 }
 
 } // namespace inet

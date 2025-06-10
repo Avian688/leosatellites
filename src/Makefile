@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for $(LIB_PREFIX)leosatellites
 #
 # This file was generated with the command:
-#  opp_makemake --make-so -f --deep -KINET4_4_PROJ=../../inet4.4 -KOS3_PROJ=../../os3 -DINET_IMPORT -I/opt/local/include/igraph -I$$\(OS3_PROJ\)/src -I$$\(INET4_4_PROJ\)/src -I/opt/homebrew/Cellar/curl/7.83.1/include/curl -L/opt/local/lib -L$$\(INET4_4_PROJ\)/src -L$$\(OS3_PROJ\)/src -ligraph -lxml2 -lz -lgmp -lblas -lglpk -llapack -larpack -lINET$$\(D\) -los3$$\(D\)
+#  opp_makemake --make-so -f --deep -KINET4_5_PROJ=../../inet4.5 -KOS3_PROJ=../../os3 -DINET_IMPORT -I/usr/local/include/igraph -I$$\(OS3_PROJ\)/src -I$$\(INET4_5_PROJ\)/src -I/usr/include/x86_64-linux-gnu/curl -L/opt/local/lib -L/usr/local/lib -L$$\(INET4_5_PROJ\)/src -L$$\(OS3_PROJ\)/src -ligraph -lxml2 -lz -lgmp -lblas -lglpk -llapack -larpack -lINET$$\(D\) -los3$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -14,13 +14,13 @@ TARGET_IMPDEF = $(TARGET_NAME)$(IMPDEF_SUFFIX)
 TARGET_FILES = $(TARGET_DIR)/$(TARGET)
 
 # C++ include paths (with -I)
-INCLUDE_PATH = -I/opt/local/include/igraph -I$(OS3_PROJ)/src -I$(INET4_4_PROJ)/src -I/opt/homebrew/Cellar/curl/7.83.1/include/curl
+INCLUDE_PATH = -I/usr/local/include/igraph -I$(OS3_PROJ)/src -I$(INET4_5_PROJ)/src -I/usr/include/x86_64-linux-gnu/curl
 
 # Additional object and library files to link with
 EXTRA_OBJS =
 
 # Additional libraries (-L, -l options)
-LIBS = $(LDFLAG_LIBPATH)/opt/local/lib $(LDFLAG_LIBPATH)$(INET4_4_PROJ)/src $(LDFLAG_LIBPATH)$(OS3_PROJ)/src  -ligraph -lxml2 -lz -lgmp -lblas -lglpk -llapack -larpack -lINET$(D) -los3$(D)
+LIBS = $(LDFLAG_LIBPATH)/opt/local/lib $(LDFLAG_LIBPATH)/usr/local/lib $(LDFLAG_LIBPATH)$(INET4_5_PROJ)/src $(LDFLAG_LIBPATH)$(OS3_PROJ)/src  -ligraph -lxml2 -lz -lgmp -lblas -lglpk -llapack -larpack -lINET$(D) -los3$(D)
 
 # Output directory
 PROJECT_OUTPUT_DIR = ../out
@@ -48,12 +48,7 @@ OBJS = \
     $O/networklayer/configurator/ipv4/SatelliteNodeConfigurator.o \
     $O/networklayer/ipv4/LeoIpv4.o \
     $O/networklayer/ipv4/LeoIpv4NetworkLayer.o \
-    $O/networklayer/ipv4/LeoIpv4RoutingTable.o \
-    $O/physicallayer/apskradio/SatelliteApskScalarTransmission.o \
-    $O/physicallayer/apskradio/SatelliteApskScalarTransmitter.o \
-    $O/physicallayer/propagation/SatellitePropagation.o \
-    $O/physicallayer/unitdisk/SatelliteUnitDiskTransmission.o \
-    $O/physicallayer/unitdisk/SatelliteUnitDiskTransmitter.o
+    $O/networklayer/ipv4/LeoIpv4RoutingTable.o
 
 # Message files
 MSGFILES =
@@ -62,7 +57,7 @@ MSGFILES =
 SMFILES =
 
 # Other makefile variables (-K)
-INET4_4_PROJ=../../inet4.4
+INET4_5_PROJ=../../inet4.5
 OS3_PROJ=../../os3
 
 #------------------------------------------------------------------------------
@@ -84,7 +79,7 @@ include $(CONFIGFILE)
 # Simulation kernel and user interface libraries
 OMNETPP_LIBS = -loppenvir$D $(KERNEL_LIBS) $(SYS_LIBS)
 ifneq ($(PLATFORM),win32)
-LIBS += -Wl,-rpath,$(abspath /opt/local/lib) -Wl,-rpath,$(abspath $(INET4_4_PROJ)/src) -Wl,-rpath,$(abspath $(OS3_PROJ)/src)
+LIBS += -Wl,-rpath,$(abspath /opt/local/lib) -Wl,-rpath,$(abspath /usr/local/lib) -Wl,-rpath,$(abspath $(INET4_5_PROJ)/src) -Wl,-rpath,$(abspath $(OS3_PROJ)/src)
 endif
 
 COPTS = $(CFLAGS) $(IMPORT_DEFINES) -DINET_IMPORT $(INCLUDE_PATH) -I$(OMNETPP_INCL_DIR)
@@ -143,7 +138,9 @@ endif
 
 .PHONY: all clean cleanall depend msgheaders smheaders
 
-.SUFFIXES: .cc
+# disabling all implicit rules
+.SUFFIXES :
+.PRECIOUS : %_m.h %_m.cc
 
 $O/%.o: %.cc $(COPTS_FILE) | msgheaders smheaders
 	@$(MKPATH) $(dir $@)

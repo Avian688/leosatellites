@@ -54,7 +54,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
 void LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 {
-    if(std::__fs::filesystem::is_directory(filePrefix) || std::__fs::filesystem::exists(filePrefix)) {
+    if(std::filesystem::is_directory(filePrefix) || std::filesystem::exists(filePrefix)) {
         std::string fName = filePrefix + "/" + currentInterval.str() + ".txt";
         std::ifstream file(fName);
         if (file.is_open()) {
@@ -176,8 +176,8 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
 
 void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval)
 {
-    if (!std::__fs::filesystem::is_directory(filePrefix) || !std::__fs::filesystem::exists(filePrefix)) {
-        std::__fs::filesystem::create_directory(filePrefix);
+    if (!std::filesystem::is_directory(filePrefix) || !std::filesystem::exists(filePrefix)) {
+        std::filesystem::create_directory(filePrefix);
     }
     std::ofstream fout;
     std::string fName = filePrefix + "/" + currentInterval.str() + ".txt";

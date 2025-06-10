@@ -3,7 +3,7 @@
 	<name>leosatellites</name>
 	<comment></comment>
 	<projects>
-		<project>inet4.4</project>
+		<project>inet4.5</project>
 		<project>os3</project>
 	</projects>
 	<buildSpec>
