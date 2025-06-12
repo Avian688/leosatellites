@@ -38,24 +38,43 @@ LeoChannelConstructor::LeoChannelConstructor(){
 void LeoChannelConstructor::initialize(int stage)
 {
     EV_TRACE << "initializing LeoChannelConstructor stage " << stage << endl;
+
     if (stage == INITSTAGE_LOCAL) {
+        // Read base IP address and subnet mask from parameters
         addressBase = Ipv4Address(par("addressBase").stringValue());
         netmask = Ipv4Address(par("netmask").stringValue());
+
+        // Create timer messages
         startManagerNode = new cMessage("startManagerNode");
         updateTimer = new cMessage("update");
-        int planes = getAncestorPar("numOfPlanes");
-        numOfSats = getAncestorPar("numOfSats");
-        numOfGS = getAncestorPar("numOfGS");
-        satPerPlane = getAncestorPar("satsPerPlane");
-        numOfPlanes = (int)std::ceil(((double)numOfSats/((double)planes*(double)satPerPlane))*(double)planes); //depending on number of satellites, all planes may not be filled
-        configurator = dynamic_cast<LeoIpv4NetworkConfigurator*>(getParentModule()->getSubmodule("configurator"));
+
+        // Get reference to the parent module
+        cModule *parent = getParentModule();
+
+        // Retrieve satellite network parameters from parent module
+        int planes = parent->par("numOfPlanes");
+        numOfSats = parent->par("numOfSats");
+        numOfGS = parent->par("numOfGS");
+        satPerPlane = parent->par("satsPerPlane");
+
+        // Calculate total number of planes, accounting for unfilled ones
+        numOfPlanes = (int)std::ceil(((double)numOfSats / ((double)planes * (double)satPerPlane)) * (double)planes);
+
+        // Get reference to the configurator submodule
+        configurator = dynamic_cast<LeoIpv4NetworkConfigurator*>(parent->getSubmodule("configurator"));
+
+        // Initialize update and interval counters
         updateInterval = 0;
         currentInterval = 0;
-        networkName = getParentModule()->getName();
+
+        // Get general network configuration
+        networkName = parent->getName();
         linkDataRate = par("dataRate").str();
         queueSize = par("queueSize");
-        scheduleAt(0, startManagerNode);
+        interfaceType = par("interfaceType").stringValue();
 
+        // Start manager node at simulation time 0
+        scheduleAt(0, startManagerNode);
     }
 }
 
@@ -383,7 +402,7 @@ void LeoChannelConstructor::setUpGSLinks()
 
 void LeoChannelConstructor::updatePPPModules(cModule *mod)
 {
-    cModuleType *pppModuleType = cModuleType::get("inet.linklayer.ppp.PppInterface");
+    cModuleType *pppModuleType = cModuleType::get(interfaceType);
     int submoduleVectorSize = mod->gateSize("pppg");
     for (SubmoduleIterator it(mod); !it.end(); ++it) {
         cModule *submodule = *it;

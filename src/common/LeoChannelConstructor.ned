@@ -23,4 +23,5 @@ simple LeoChannelConstructor
        string netmask = default("255.0.0.0"); 
        double dataRate @unit(bps) = default(10Mbps);
        int queueSize = default(1000);
+       string interfaceType = default("leosatellites.linklayer.ppp.PppInterfaceMutable"); //Required if you need different queues.
 }

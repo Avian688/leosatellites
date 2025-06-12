@@ -54,6 +54,7 @@ protected:
     int numOfGS;
     int numOfPlanes;
     int satPerPlane;
+    const char* interfaceType;
 
     Ipv4Address addressBase;
     Ipv4Address netmask;
