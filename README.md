@@ -5,7 +5,7 @@ Atlas provides communication and mobility models that are built around the OS3 f
 You can install my updated OS3 project here:
 https://github.com/Avian688/os3
 
-Once the project has been cloned, right click on the project and go onto properties. Then go onto OMNeT++ > Makemake. Then double click on src: makemake to open the make file options. In the Compile tab the absolute path of the OS3 src folder should be specified as an include path. The following examples are done on a Linux system, but the setup should be almost identicle for macOS. e.g.
+Once Atlas (leosatellites) has been cloned, right click on the project and go onto properties. Then go onto OMNeT++ > Makemake. Then double click on src: makemake to open the make file options. In the Compile tab the absolute path of the OS3 src folder should be specified as an include path. The following examples are done on a Linux system, but the setup should be almost identicle for macOS. e.g.
 
 /Volumes/LocalDataHD/av288/omnetpp-6.0/samples/os3/src
 
