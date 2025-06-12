@@ -1,4 +1,4 @@
-Atlas: OMNeT++ and INET framework for simulation Low-Earth Orbit Satellite Constellations.
+# **Atlas**: OMNeT++ and INET framework for simulation Low-Earth Orbit Satellite Constellations.
 
 Atlas provides communication and mobility models that are built around the OS3 framework for OMNeT++/INET. OMNeT++ 6.1 and INET version 4.5 are used in this project version. The igraph library is used to create a topology every x seconds of the satelite constellations. The most recent I-Graph version (0.10.16) should work. See the makemake instructions for how the library (and its dependancies) can be added. igraph libraries are included within my GitHub repo (https://github.com/Avian688/igraph) which can be cloned and referenced for use in this project in case the most recent igraph version does not work.
 
