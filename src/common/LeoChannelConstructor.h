@@ -13,6 +13,7 @@
 #include "../networklayer/configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 #include "../mobility/SatelliteMobility.h"
 #include "../mobility/GroundStationMobility.h"
+#include "inet/queueing/queue/PacketQueue.h"
 
 namespace inet{
 
@@ -28,6 +29,7 @@ protected:
     cMessage *updateTimer;
     simtime_t updateInterval;
     std::string linkDataRate;
+    int queueSize;
     simtime_t currentInterval;
 
     virtual bool handleOperationStage(LifecycleOperation *operation, IDoneCallback *doneCallback) override;
@@ -43,7 +45,7 @@ protected:
     virtual void addPPPInterfaces();
     virtual void prepareInterface(NetworkInterface *interfaceEntry);
     void createChannel(std::string delay, cGate *gate1, cGate*gate2);
-    void scheduleUpdate();
+    void scheduleUpdate(bool simStart);
     virtual void finish() override;
 
 protected:

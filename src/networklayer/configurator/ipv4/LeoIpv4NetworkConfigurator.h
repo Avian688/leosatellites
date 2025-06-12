@@ -44,13 +44,13 @@ protected:
     virtual void fillNextHopInterfaceMap();
     virtual cModule* getNodeModule(int nodeNumber);
     virtual void assignIDtoModules();
-    virtual void loadConfiguration(simtime_t currentInterval);
+    virtual bool loadConfiguration(simtime_t currentInterval);
     virtual ~LeoIpv4NetworkConfigurator();
 protected:
     //internal state
     Topology topology;
     bool loadFiles;
-    std::map<int, cModule*> nodeModules;
+    std::unordered_map<int, cModule*> nodeModules;
     std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;
     std::map<cModule*, std::map<cModule*, int>> nextHopInterfaceMap;
     std::string networkName;

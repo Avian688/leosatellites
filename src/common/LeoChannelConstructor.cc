@@ -53,6 +53,7 @@ void LeoChannelConstructor::initialize(int stage)
         currentInterval = 0;
         networkName = getParentModule()->getName();
         linkDataRate = par("dataRate").str();
+        queueSize = par("queueSize");
         scheduleAt(0, startManagerNode);
 
     }
@@ -62,51 +63,52 @@ void LeoChannelConstructor::initialize(int stage)
 void LeoChannelConstructor::handleMessage(cMessage *msg)
 {
     if(msg == updateTimer){
-        currentInterval += updateInterval;
-        //std::cout << "Updating at time: " << simTime() << endl;
         setUpGSLinks();
         addPPPInterfaces();
         //setUpInterfaces();
         updateChannels();
-        configurator->updateForwardingStates(currentInterval);
-        //configurator->generateTopologyGraph(currentInterval);
+        configurator->updateForwardingStates(simTime());
 
         //update all routing tables
-
         //perform global arp
 
         //configurator->configure();
-        scheduleUpdate();
+        scheduleUpdate(false);
     }
     else if(msg == startManagerNode){
         //updateChannels();
 
         setUpSimulation();
         configurator->establishInitialISLs();
-        configurator->updateForwardingStates(currentInterval);
+        configurator->updateForwardingStates(simTime());
         //configurator->generateTopologyGraph(currentInterval);
-        scheduleUpdate();
+        scheduleUpdate(true);
     }
     else{
         throw cRuntimeError("Unknown message arrived at channel constructor.");
     }
 }
 
-void LeoChannelConstructor::scheduleUpdate()
+void LeoChannelConstructor::scheduleUpdate(bool simStart)
 {
     cancelEvent(updateTimer);
-    simtime_t nextUpdate = simTime() + SimTime(updateInterval);//updateInterval;
+    simtime_t nextUpdate;
+    if(!simStart){
+        nextUpdate = simTime() + updateInterval;
+    }
+    else{
+        nextUpdate = simTime() + updateInterval + SimTime(1, SIMTIME_US);
+    }
     scheduleAt(nextUpdate, updateTimer);
 }
 
 void LeoChannelConstructor::setUpSimulation()
 {
-    //cChannelType *channelType = cChannelType::get("ned.DatarateChannel"); //replace with either gs channel or laser link channel ned file
     for(int satNum = 0; satNum < numOfSats; satNum++){
         std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
         cModule *satMod = getModuleByPath(satName.c_str());
         if(satNum == 0){
-            updateInterval = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->par("updateInterval").doubleValue() + 0.000000001;
+            updateInterval = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->par("updateInterval").doubleValue();
         }
     }
     for(int planeNum = 0; planeNum < numOfPlanes; planeNum++){
@@ -256,14 +258,15 @@ void LeoChannelConstructor::updateChannels()
                     throw cRuntimeError("Unsupported mobility used by module");
                 }
 
-                cPar& param = chan->par("delay");
                 std::string dString = std::to_string(distance) + "ms";
+
+                cPar& param = chan->par("delay");
                 param.parse(dString.c_str());
-                chan->par("datarate").parse("10Mbps");
+                chan->par("datarate").parse(linkDataRate.c_str());
 
                 cPar& param2 = chan2->par("delay");
                 param2.parse(dString.c_str());
-                chan2->par("datarate").parse("10Mbps");
+                chan2->par("datarate").parse(linkDataRate.c_str());
             }
         }
     }
@@ -397,6 +400,7 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
             cGate *srcGateIn = mod->gateHalf("pppg", cGate::INPUT, i);
 
             module = pppModuleType->create("ppp", mod, i);
+            //module->getSubmodule("queue")->par("packetCapacity") = 102;
 
             cChannelType *idealChannelType = cChannelType::get("ned.IdealChannel");
             cChannel *idealChannel = idealChannelType->create("idealChannel");
@@ -422,11 +426,19 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
 
             physOutGate->connectTo(srcGateOut, idealChannel);
             srcGateIn->connectTo(physInGate, idealChannel2);
+
+            //NetworkInterface* pppInterfaceModule = dynamic_cast<NetworkInterface*>(module);
+            //pppInterfaceModule->addSubmodule(type, name, index)
+            //cModuleType *moduleType = cModuleType::get("inet.queueing.queue.DropTailQueue");
+            //cModule *pppInterfaceMod = moduleType->create("queue", pppInterfaceModule);
+
             module->finalizeParameters();
             module->buildInside();
+            std::string queueSizeString = std::to_string(queueSize);
+            module->getSubmodule("queue")->par("packetCapacity").parse(queueSizeString.c_str());
             module->scheduleStart(simTime());
-
             module->callInitialize();  //error here - trying to initisalise already existing module.
+
             Ipv4Address address = Ipv4Address(addressBase.getInt() + uint32_t(module->getId()));
 
             //configurator->assignNewAddress(module);
@@ -485,7 +497,7 @@ void LeoChannelConstructor::createChannel(std::string delay, cGate *gate1, cGate
     cChannel *channel = channelType->create("channel");
     channel->par("delay").parse(delay.c_str());
     //channel->par("datarate").parse(linkDataRate.c_str());
-    channel->par("datarate").parse("10Mbps");
+    channel->par("datarate").parse(linkDataRate.c_str());
     gate1->connectTo(gate2, channel);
 }
 

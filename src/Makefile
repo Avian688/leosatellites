@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for $(LIB_PREFIX)leosatellites
 #
 # This file was generated with the command:
-#  opp_makemake --make-so -f --deep -KINET4_5_PROJ=../../inet4.5 -KOS3_PROJ=../../os3 -DINET_IMPORT -I/usr/local/include/igraph -I$$\(OS3_PROJ\)/src -I$$\(INET4_5_PROJ\)/src -I/usr/include/x86_64-linux-gnu/curl -L/opt/local/lib -L/usr/local/lib -L$$\(INET4_5_PROJ\)/src -L$$\(OS3_PROJ\)/src -ligraph -lxml2 -lz -lgmp -lblas -lglpk -llapack -larpack -lINET$$\(D\) -los3$$\(D\)
+#  opp_makemake --make-so -f --deep -KINET4_5_PROJ=../../inet4.5 -KOS3_PROJ=../../os3 -DINET_IMPORT -I/opt/homebrew/Cellar/igraph/0.10.15_1/include/igraph -I$$\(OS3_PROJ\)/src -I$$\(INET4_5_PROJ\)/src -I/opt/homebrew/opt/curl/include/curl -L/opt/local/lib -L/usr/local/lib -L$$\(INET4_5_PROJ\)/src -L$$\(OS3_PROJ\)/src -ligraph -lxml2 -lz -lgmp -lblas -lglpk -llapack -larpack -lINET$$\(D\) -los3$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -14,7 +14,7 @@ TARGET_IMPDEF = $(TARGET_NAME)$(IMPDEF_SUFFIX)
 TARGET_FILES = $(TARGET_DIR)/$(TARGET)
 
 # C++ include paths (with -I)
-INCLUDE_PATH = -I/usr/local/include/igraph -I$(OS3_PROJ)/src -I$(INET4_5_PROJ)/src -I/usr/include/x86_64-linux-gnu/curl
+INCLUDE_PATH = -I/opt/homebrew/Cellar/igraph/0.10.15_1/include/igraph -I$(OS3_PROJ)/src -I$(INET4_5_PROJ)/src -I/opt/homebrew/opt/curl/include/curl
 
 # Additional object and library files to link with
 EXTRA_OBJS =
@@ -30,7 +30,6 @@ O = $(PROJECT_OUTPUT_DIR)/$(CONFIGNAME)/$(PROJECTRELATIVE_PATH)
 # Object files for local .cc, .msg and .sm files
 OBJS = \
     $O/common/LeoChannelConstructor.o \
-    $O/common/LeoFlowScheduler.o \
     $O/libnorad/cEcef.o \
     $O/libnorad/cNoradBaseA.o \
     $O/libnorad/cNoradSGP4A.o \

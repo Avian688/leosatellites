@@ -1,6 +1,8 @@
-This project provides communication and mobility models that are built around the OS3 framework for OMNeT++/INET. OMNeT++ 6.0 and INET version 4.4 are used in this project version. The igraph library is used to create a topology every x seconds of the satelite constellations. K-Shortest-path implemention is only present in the dev build of igraph, therefore that required. See the makemake instructions for how the library (and its dependancies) can be added. A igraph project is included within my GitHub repo which can be cloned and referenced for use in this project.
+Atlas: OMNeT++ and INET framework for simulation Low-Earth Orbit Satellite Constellations.
 
-Once the project has been cloned, right click on the project and go onto properties. Then go onto OMNeT++ > Makemake. Then double click on src: makemake to open the make file options. In the Compile tab the absolute path of the OS3 src folder should be specified as an include path. The following examples are done on a Linux system, but the setup should be almost identicle for macOS.
+Atlas provides communication and mobility models that are built around the OS3 framework for OMNeT++/INET. OMNeT++ 6.1 and INET version 4.5 are used in this project version. The igraph library is used to create a topology every x seconds of the satelite constellations. The most recent I-Graph version (0.10.16) should work. See the makemake instructions for how the library (and its dependancies) can be added. A igraph libraries is included within my GitHub repo which can be cloned and referenced for use in this project in case the most recent igraph version does not work.
+
+Once the project has been cloned, right click on the project and go onto properties. Then go onto OMNeT++ > Makemake. Then double click on src: makemake to open the make file options. In the Compile tab the absolute path of the OS3 src folder should be specified as an include path. The following examples are done on a Linux system, but the setup should be almost identicle for macOS. e.g.
 
 /Volumes/LocalDataHD/av288/omnetpp-6.0/samples/os3/src
 
@@ -33,6 +35,30 @@ opp_run_dbg  -m -u Qtenv -c Experiment1 -n ../../src:..:../../../inet4.4/example
 \# to run in release mode
 
 opp_run  -m -u Qtenv -c Experiment1 -n ../../src:..:../../../inet4.4/examples:../../../inet4.4/showcases:../../../inet4.4/src:../../../inet4.4/tests/validation:../../../inet4.4/tests/networks:../../../inet4.4/tutorials:../../../os3/simulations:../../../os3/src -x inet.common.selfdoc;inet.linklayer.configurator.gatescheduling.z3;inet.emulation;inet.showcases.visualizer.osg;inet.examples.emulation;inet.showcases.emulation;inet.transportlayer.tcp_lwip;inet.applications.voipstream;inet.visualizer.osg;inet.examples.voipstream --image-path=../../../inet4.4/images:../../../os3/images -l ../../src/leosatellites -l ../../../inet4.4/src/INET -l ../../../os3/src/os3 --debug-on-errors=true omnetpp.ini
+
+Additional Information:
+> You can specify constellation information as follows in the ini file: e.g.
+**.numOfSats = 1584
+**.satsPerPlane = 22
+**.numOfPlanes = 72
+**.incl = 53
+**.alt = 550
+**.numOfGS = 95
+**.dataRate = 100Mbps
+**.queueSize = 300
+**.loadFiles = true
+
+The loadFiles parameter is important to speed the running of simulations. If this is set as false, your simulation will run a shortest path algorithm for all interfaces and may take a while to run, but routing information is saved as binary files in a folder. When loadFiles is set as true, these binary files will be loaded as the simulation is run to speed run times. You can specify ground stations as follows: e.g.
+
+**.groundStation[0].mobility.latitude = 32.816
+**.groundStation[0].mobility.longitude = -113.797
+**.groundStation[0].cityName = "Roll AZ"
+
+You can enable/disable inter-satellite links to simulate bent pipes with the following:
+
+*.configurator.enableInterSatelliteLinks = true
+
+Please look at the provided ini file for other setup parameters. Any other questions let us know!
 
 # Source Code Referencing
 If you use this code or want to cite its existence in your paper please use the following bibtex:

@@ -21,5 +21,6 @@ simple LeoChannelConstructor
 	   @class("inet::LeoChannelConstructor");
 	   string addressBase = default("10.0.0.0");    // start of address range from which to automatically assign an address to the autoassignInterfaces
        string netmask = default("255.0.0.0"); 
-       string dataRate = default("10Mbps");
+       double dataRate @unit(bps) = default(10Mbps);
+       int queueSize = default(1000);
 }
