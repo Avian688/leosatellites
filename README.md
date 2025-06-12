@@ -1,6 +1,9 @@
 Atlas: OMNeT++ and INET framework for simulation Low-Earth Orbit Satellite Constellations.
 
-Atlas provides communication and mobility models that are built around the OS3 framework for OMNeT++/INET. OMNeT++ 6.1 and INET version 4.5 are used in this project version. The igraph library is used to create a topology every x seconds of the satelite constellations. The most recent I-Graph version (0.10.16) should work. See the makemake instructions for how the library (and its dependancies) can be added. A igraph libraries is included within my GitHub repo which can be cloned and referenced for use in this project in case the most recent igraph version does not work.
+Atlas provides communication and mobility models that are built around the OS3 framework for OMNeT++/INET. OMNeT++ 6.1 and INET version 4.5 are used in this project version. The igraph library is used to create a topology every x seconds of the satelite constellations. The most recent I-Graph version (0.10.16) should work. See the makemake instructions for how the library (and its dependancies) can be added. igraph libraries are included within my GitHub repo (https://github.com/Avian688/igraph) which can be cloned and referenced for use in this project in case the most recent igraph version does not work.
+
+You can install my updated OS3 project here:
+https://github.com/Avian688/os3
 
 Once the project has been cloned, right click on the project and go onto properties. Then go onto OMNeT++ > Makemake. Then double click on src: makemake to open the make file options. In the Compile tab the absolute path of the OS3 src folder should be specified as an include path. The following examples are done on a Linux system, but the setup should be almost identicle for macOS. e.g.
 
