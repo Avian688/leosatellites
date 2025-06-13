@@ -152,11 +152,6 @@ void LeoIpv4NetworkConfigurator::assignIDtoModules()
     }
 }
 
-void LeoIpv4NetworkConfigurator::addToISLMobilityMap(SatelliteMobility* source, SatelliteMobility* destination)
-{
-    satelliteISLMobilityModules[source].push_back(source);
-}
-
 void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterval)
 {
     if(loadFiles){

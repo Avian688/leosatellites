@@ -73,7 +73,6 @@ public:
     virtual void addNextHopInterface(cModule* source, cModule* destination, int interfaceID);
     virtual void removeNextHopInterface(cModule* source, cModule* destination);
     virtual void addGSLinktoTopologyGraph(int gsNum, int destNum, double weight);
-    virtual void addToISLMobilityMap(SatelliteMobility* source, SatelliteMobility* destination);
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

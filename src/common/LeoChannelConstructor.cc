@@ -172,7 +172,6 @@ void LeoChannelConstructor::setUpSimulation()
 
                 //cChannel *channel = channelType->create("channel");
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModA->getSubmodule("mobility"));
-                //configurator->addToISLMobilityMap(dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility")), destSatMobility);
                 double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
                 std::string dString = std::to_string((distance/299792458)*1000) + "ms";
 
@@ -193,7 +192,6 @@ void LeoChannelConstructor::setUpSimulation()
                 outGateSat2 = gatePair2.second;
 
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModB->getSubmodule("mobility"));
-                //configurator->addToISLMobilityMap(dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility")), destSatMobility);
                 double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
                 std::string dString = std::to_string((distance/299792458)*1000) + "ms";
                 createChannel(dString, outGateSat1, inGateSat2);
