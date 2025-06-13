@@ -51,7 +51,7 @@ Additional Information:
 **.queueSize = 300
 **.loadFiles = true
 
-The loadFiles parameter is important to speed the running of simulations. If this is set as false, your simulation will run a shortest path algorithm for all interfaces and may take a while to run, but routing information is saved as binary files in a folder. When loadFiles is set as true, these binary files will be loaded as the simulation is run to speed run times. You can specify ground stations as follows: e.g.
+The loadFiles parameter is important to speed the running of simulations. If this is set as false, your simulation will run a shortest path algorithm for all interfaces and may take a while to run, but routing information is saved as binary files in a folder. E.g. the above constellation will produce folder called 550_22_72_53_ISL When loadFiles is set as true, these binary files will be loaded as the simulation is run to speed run times. You can specify ground stations as follows: e.g.
 
 **.groundStation[0].mobility.latitude = 32.816
 **.groundStation[0].mobility.longitude = -113.797
@@ -59,7 +59,7 @@ The loadFiles parameter is important to speed the running of simulations. If thi
 
 You can enable/disable inter-satellite links to simulate bent pipes with the following:
 
-*.configurator.enableInterSatelliteLinks = true
+**.enableInterSatelliteLinks = true
 
 Please look at the provided ini file for other setup parameters. Any other questions let us know!
 

@@ -36,6 +36,8 @@ network SatSGP4
         double alt;
         int satsPerPlane;
         int numOfPlanes;
+        bool enableInterSatelliteLinks = default(true);
+        
         @display("bgi=background_earth,s;bgb=2160,1080");
         //@statistic[rtt](source=count(GS[0].app[0].rtt); record=figure; targetFigure=rttCounter; checkSignals=false);
         //@figure[rttCounter](type=plot; pos=600,50; label="Round Trip Time");

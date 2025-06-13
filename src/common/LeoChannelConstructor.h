@@ -58,6 +58,8 @@ protected:
 
     Ipv4Address addressBase;
     Ipv4Address netmask;
+
+    bool enableInterSatelliteLinks;
 };
 
 }

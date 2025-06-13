@@ -56,6 +56,7 @@ void LeoChannelConstructor::initialize(int stage)
         numOfSats = parent->par("numOfSats");
         numOfGS = parent->par("numOfGS");
         satPerPlane = parent->par("satsPerPlane");
+        enableInterSatelliteLinks = parent->par("enableInterSatelliteLinks").boolValue();
 
         // Calculate total number of planes, accounting for unfilled ones
         numOfPlanes = (int)std::ceil(((double)numOfSats / ((double)planes * (double)satPerPlane)) * (double)planes);
@@ -96,9 +97,19 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
     }
     else if(msg == startManagerNode){
         //updateChannels();
+        if(enableInterSatelliteLinks){
+            setUpSimulation();
+            setUpGSLinks();
+            setUpInterfaces();
+            updateChannels();
+            configurator->establishInitialISLs();
+        }
+        else{
+            setUpGSLinks();
+            setUpInterfaces();
+            updateChannels();
+        }
 
-        setUpSimulation();
-        configurator->establishInitialISLs();
         configurator->updateForwardingStates(simTime());
         //configurator->generateTopologyGraph(currentInterval);
         scheduleUpdate(true);
@@ -190,10 +201,6 @@ void LeoChannelConstructor::setUpSimulation()
             }
         }
     }
-
-    setUpGSLinks();
-    setUpInterfaces();
-    updateChannels();
 }
 
 void LeoChannelConstructor::setUpInterfaces()

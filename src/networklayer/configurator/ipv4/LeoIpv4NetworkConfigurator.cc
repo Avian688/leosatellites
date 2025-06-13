@@ -69,14 +69,29 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         double altitude = parent->par("alt");
         double inclination = parent->par("incl");
 
-        // Convert altitude and inclination to string and remove trailing zeros
+        // Convert altitude and inclination to strings
         std::string altitudeStr = std::to_string(altitude);
         std::string inclinationStr = std::to_string(inclination);
-        altitudeStr.erase(altitudeStr.find_last_not_of('0'), std::string::npos);
-        inclinationStr.erase(inclinationStr.find_last_not_of('0') + 1, std::string::npos);
 
-        // Generate file prefix string for later use
-        filePrefix = altitudeStr + "." + std::to_string(planes) + "." + std::to_string(satPerPlane) + "." + inclinationStr;
+        // Trim trailing zeros and a possible trailing dot from altitude
+        altitudeStr.erase(altitudeStr.find_last_not_of('0') + 1);
+        if (!altitudeStr.empty() && altitudeStr.back() == '.') {
+            altitudeStr.pop_back();
+        }
+
+        // Trim trailing zeros and a possible trailing dot from inclination
+        inclinationStr.erase(inclinationStr.find_last_not_of('0') + 1);
+        if (!inclinationStr.empty() && inclinationStr.back() == '.') {
+            inclinationStr.pop_back();
+        }
+
+        // Determine the topology tag based on ISL setting
+        std::string topologyTag = parent->par("enableInterSatelliteLinks").boolValue() ? "_ISL" : "_BP";
+
+        // Compose the file prefix using underscores as separators
+        filePrefix = altitudeStr + "_" + std::to_string(planes) + "_" + std::to_string(satPerPlane) + "_" + inclinationStr + topologyTag;
+
+        igraph_vector_int_init(&islVec, 0);
     }
 }
 
@@ -158,8 +173,6 @@ void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterva
 
 void LeoIpv4NetworkConfigurator::establishInitialISLs()
 {
-    //igraph_vector_int_init(&islVec, numOfISLs*2); //two vecs needed for each ISL
-    igraph_vector_int_init(&islVec, 0);
     unsigned int islVecIterator = 0;
     for(int planeNum = 0; planeNum < numOfPlanes; planeNum++){
         unsigned int numOfSatsInPlane =  planeNum*satPerPlane+satPerPlane;
