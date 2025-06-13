@@ -41,7 +41,6 @@ protected:
     virtual double computeLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
     virtual double computeWiredLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
     virtual int getNextHopInterfaceID(cModule* sourceSatellite, cModule* nextHopSatellite);
-    virtual void fillNextHopInterfaceMap();
     virtual cModule* getNodeModule(int nodeNumber);
     virtual void assignIDtoModules();
     virtual bool loadConfiguration(simtime_t currentInterval);
@@ -73,6 +72,7 @@ public:
     virtual void addNextHopInterface(cModule* source, cModule* destination, int interfaceID);
     virtual void removeNextHopInterface(cModule* source, cModule* destination);
     virtual void addGSLinktoTopologyGraph(int gsNum, int destNum, double weight);
+    virtual void fillNextHopInterfaceMap();
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

@@ -96,20 +96,16 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
         scheduleUpdate(false);
     }
     else if(msg == startManagerNode){
-        //updateChannels();
+        setUpSimulation();
+        setUpGSLinks();
+        setUpInterfaces();
+        updateChannels();
+
         if(enableInterSatelliteLinks){
-            setUpSimulation();
-            setUpGSLinks();
-            setUpInterfaces();
-            updateChannels();
             configurator->establishInitialISLs();
         }
-        else{
-            setUpGSLinks();
-            setUpInterfaces();
-            updateChannels();
-        }
 
+        configurator->fillNextHopInterfaceMap();
         configurator->updateForwardingStates(simTime());
         //configurator->generateTopologyGraph(currentInterval);
         scheduleUpdate(true);
@@ -141,6 +137,11 @@ void LeoChannelConstructor::setUpSimulation()
             updateInterval = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->par("updateInterval").doubleValue();
         }
     }
+
+    if(!enableInterSatelliteLinks){
+        return;
+    }
+
     for(int planeNum = 0; planeNum < numOfPlanes; planeNum++){
         unsigned int numOfSatsInPlane =  planeNum*satPerPlane+satPerPlane;
         if(numOfSats < numOfSatsInPlane){

@@ -237,7 +237,6 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
             }
         }
     }
-    fillNextHopInterfaceMap();
 }
 
 void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval)
