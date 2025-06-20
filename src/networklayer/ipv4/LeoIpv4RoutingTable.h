@@ -21,7 +21,7 @@ namespace inet {
 
 class INET_API LeoIpv4RoutingTable : public Ipv4RoutingTable {
 public:
-    virtual void configureRouterId();
+    virtual void configureRouterId() override; //allow LeoChannelConstructor to configure router id
 
 protected:
     virtual void initialize(int stage) override;

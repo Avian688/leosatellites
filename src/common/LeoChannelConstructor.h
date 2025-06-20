@@ -9,11 +9,12 @@
 #include <inet/networklayer/common/NetworkInterface.h>
 #include <inet/linklayer/ppp/Ppp.h>
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
+#include <inet/queueing/queue/PacketQueue.h>
+
 #include "../networklayer/ipv4/LeoIpv4RoutingTable.h"
 #include "../networklayer/configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 #include "../mobility/SatelliteMobility.h"
 #include "../mobility/GroundStationMobility.h"
-#include "inet/queueing/queue/PacketQueue.h"
 
 namespace inet{
 

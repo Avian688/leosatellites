@@ -250,7 +250,7 @@ std::pair<cGate*,cGate*> LeoChannelConstructor::getNextFreeGate(cModule *mod)
             mod->setGateSize("pppg", mod->gateSize("pppg")+1);
         }
     }
-    return std::make_pair(inGate, outGate);
+    return std::pair<cGate*, cGate*>(inGate, outGate);
 }
 
 void LeoChannelConstructor::updateChannels()
@@ -268,16 +268,16 @@ void LeoChannelConstructor::updateChannels()
                 std::string mobilityName = destModule->getSubmodule("mobility")->getNedTypeName();
                 //std::string mobilityName = destModule->getModuleByPath("mobility")->getNedTypeName();
                 double distance = 0;
-                if(mobilityName == "leosatellites.mobility.SatelliteMobility"){
+                if(mobilityName == "leosatellites.mobility.SatelliteMobility"){ //Satellite to Satellite Channel
                     SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility"));
                     distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
                     distance = (distance/299792458)*1000; //ms
                 }
-                else if (mobilityName == "leosatellites.mobility.GroundStationMobility"){
+                else if (mobilityName == "leosatellites.mobility.GroundStationMobility"){ // Satellite to Ground Station Channel
                     GroundStationMobility* destGSMobility = dynamic_cast<GroundStationMobility*>(destModule->getSubmodule("mobility"));
                     distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destGSMobility->getLUTPositionY(), destGSMobility->getLUTPositionX(), 0)*1000;
                     distance = (distance/299792458)*1000; //ms
-                    configurator->addGSLinktoTopologyGraph(destModule->getIndex(), satNum, distance);
+                    configurator->addGSLinktoTopologyGraph(configurator->getNodeModuleGraphId(destModule->getFullName()), satNum, distance); //TODO FIX
                 }
                 else{
                     throw cRuntimeError("Unsupported mobility used by module");
@@ -299,6 +299,7 @@ void LeoChannelConstructor::updateChannels()
 
 void LeoChannelConstructor::setUpGSLinks()
 {
+    //Sets up new GS links if new satellite is reachable.
     for(int gsNum = 0; gsNum < numOfGS; gsNum++){
         std::string gsName = std::string(networkName + ".groundStation[" + std::to_string(gsNum) + "]");
         cModule *gsMod = getModuleByPath(gsName.c_str());
@@ -339,12 +340,14 @@ void LeoChannelConstructor::setUpGSLinks()
                             NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
                             if(ie){
                                 configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
+                                configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
                             }
 
                             IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
                             NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
                             if(die){
                                 configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
+                                configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
                             }
                         }
                 }
@@ -372,12 +375,14 @@ void LeoChannelConstructor::setUpGSLinks()
                     NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
                     if(ie){
                         configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
+                        configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
                     }
 
                     IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
                     NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
                     if(die){
                         configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
+                        configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
                     }
                 }
             }
@@ -387,6 +392,14 @@ void LeoChannelConstructor::setUpGSLinks()
                     for(int i = 0; i < gsGateSize; i++){
                         cGate* endGate = gsMod->gate("pppg$o", i)->getPathEndGate();
                         if((endGate->getOwnerModule()->getOwner()->getOwner() == satMod)){
+                            //IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
+                            //NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(gsMod->gate("pppg$o", i)->getId());
+
+                            //IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
+                            //NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(endGate->getId());
+
+                           // configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
+                            configurator->removeNextHopInterface(gsMod, satMod);//, die->getInterfaceId());
                             gsMod->gate("pppg$o", i)->disconnect();
                         }
                     }
@@ -396,6 +409,7 @@ void LeoChannelConstructor::setUpGSLinks()
                     for(int i = 0; i < satGateSize; i++){
                         cGate* endGate = satMod->gate("pppg$o", i)->getPathEndGate();
                         if((endGate->getOwnerModule()->getOwner()->getOwner() == gsMod)){
+                            configurator->removeNextHopInterface(satMod, gsMod);
                             satMod->gate("pppg$o", i)->disconnect();
                         }
                     }
@@ -491,7 +505,9 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod)
                 destMod = srcGateOut->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
             }
 
+            NetworkInterface* die = dynamic_cast<NetworkInterface*>(destMod->getSubmodule("ppp", i));
             configurator->addNextHopInterface(mod, destMod, ie->getInterfaceId());
+            configurator->addIpAddressMap(ie->getIpv4Address().getInt(), mod->getFullName());
             //add
             //configurator->assignAddress(InterfaceEntry1)
             //node->configureInterface(InterfaceEntry1)
@@ -521,7 +537,6 @@ void LeoChannelConstructor::createChannel(std::string delay, cGate *gate1, cGate
     cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
     cChannel *channel = channelType->create("channel");
     channel->par("delay").parse(delay.c_str());
-    //channel->par("datarate").parse(linkDataRate.c_str());
     channel->par("datarate").parse(linkDataRate.c_str());
     gate1->connectTo(gate2, channel);
 }

@@ -25,6 +25,7 @@
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
 
 #include "../../ipv4/LeoIpv4.h"
+#include "../../ipv4/LeoIpv4RoutingTable.h"
 #include "../../../mobility/SatelliteMobility.h"
 #include "../../../mobility/GroundStationMobility.h"
 
@@ -41,10 +42,12 @@ protected:
     virtual double computeLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
     virtual double computeWiredLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
     virtual int getNextHopInterfaceID(cModule* sourceSatellite, cModule* nextHopSatellite);
-    virtual cModule* getNodeModule(int nodeNumber);
     virtual void assignIDtoModules();
     virtual bool loadConfiguration(simtime_t currentInterval);
     virtual ~LeoIpv4NetworkConfigurator();
+
+    virtual void writeModuleIDMappingsToFile(const std::string& filename);
+    virtual void verifyModuleIDMappingsFromFile(const std::string& filePath);
 protected:
     //internal state
     Topology topology;
@@ -65,6 +68,12 @@ protected:
 
     simtime_t currentInterval;
     igraph_vector_int_t islVec;
+
+    std::map<std::string, int> moduleIDMap;
+
+    std::map<int, int> routerIdMap;
+
+    std::map<std::string, int> moduleGraphIDMap;
 public:
     virtual void establishInitialISLs();
     virtual void updateForwardingStates(simtime_t currentInterval);
@@ -73,6 +82,14 @@ public:
     virtual void removeNextHopInterface(cModule* source, cModule* destination);
     virtual void addGSLinktoTopologyGraph(int gsNum, int destNum, double weight);
     virtual void fillNextHopInterfaceMap();
+
+    virtual int getModuleIdFromIpAddress(int address);
+    virtual void addIpAddressMap(int address, std::string modName);
+    virtual void eraseIpAddressMap(int address);
+
+    virtual cModule* getNodeModule(int nodeNumber);
+
+    virtual int getNodeModuleGraphId(std::string nodeStr);
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

@@ -14,6 +14,8 @@
 // 
 #include "LeoIpv4.h"
 
+#include "../configurator/ipv4/LeoIpv4NetworkConfigurator.h"
+
 namespace inet {
 
 Define_Module(LeoIpv4);
@@ -32,14 +34,15 @@ void LeoIpv4::initialize(int stage)
 {
     Ipv4::initialize(stage);
     if (stage == INITSTAGE_LOCAL) {
+        configurator = dynamic_cast<LeoIpv4NetworkConfigurator *>(getParentModule()->getParentModule()->getParentModule()->getSubmodule("configurator"));
         WATCH_MAP(nextHops);
         WATCH_MAP(nextHopsStr);
 
     }
 }
 
-void LeoIpv4::addKNextHop(int k, uint32_t destinationAddr, uint32_t nextInterfaceID){
-    kNextHops[k][destinationAddr] = nextInterfaceID;
+void LeoIpv4::addKNextHop(int k, int destNode, int nextInterfaceID){
+    kNextHops[k][destNode] = nextInterfaceID;
 }
 
 void LeoIpv4::addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID){
@@ -88,21 +91,15 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
     }
     else {
         // use Ipv4 routing (lookup in routing table)
-        //std::cout << "\nFinding best matching route for: " << destAddr.str() << endl;
-        //const Ipv4Route *re = rt->findBestMatchingRoute(destAddr);
-        int interfaceID = kNextHops[1][destAddr.getInt()];
+        int modId = configurator->getModuleIdFromIpAddress(destAddr.getInt());
+
+        int interfaceID = kNextHops[1][modId];
         if (interfaceID) {
-            //std::cout << "Adding route with the following dest ID: " << interfaceID << endl;
-            //std::cout << "Gateway: " << re->getGateway() << endl;
             packet->addTagIfAbsent<InterfaceReq>()->setInterfaceId(interfaceID);
             hopFound = true;
-            //packet->addTagIfAbsent<NextHopAddressReq>()->setNextHopAddress(re->getGateway());
         }
         else{
-            std::cout << "\ndestAddr: " << destAddr.str() << endl;
-            std::cout << "\ndestAddr (int): " << destAddr.getInt() << endl;
-            std::cout << "\nInterface ID not found!: ID " << interfaceID << " at time: " << simTime() << endl;
-
+            EV_WARN << "\nInterface ID not found!: ID " << interfaceID << " at time: " << simTime() << endl;
         }
     }
 
