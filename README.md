@@ -77,7 +77,7 @@ If you use this code or want to cite its existence in your paper please use the 
 
 Other work:
 ```
-@inproceedings{omnetpp-leosatellites-model,
+@inproceedings{datatransport-leosatellites,
   author = {Valentine, Aiden and Parisis, George},
   title = {{Data Transport for the Orbiting Internet}},
   booktitle = {IEEE INFOCOM 2023 - IEEE Conference on Computer Communications Workshops (INFOCOM WKSHPS)},
