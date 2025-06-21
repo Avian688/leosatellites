@@ -74,3 +74,14 @@ If you use this code or want to cite its existence in your paper please use the 
   Year = {2021}
 }
 ```
+
+Other work:
+```
+@inproceedings{omnetpp-leosatellites-model,
+  author = {Valentine, Aiden and Parisis, George},
+  title = {{Data Transport for the Orbiting Internet}},
+  booktitle = {IEEE INFOCOM 2023 - IEEE Conference on Computer Communications Workshops (INFOCOM WKSHPS)},
+  address = {Hoboken, NJ, USA},
+  Year = {2023}
+}
+```
