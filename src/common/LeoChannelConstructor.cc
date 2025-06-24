@@ -13,10 +13,15 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 
-#include "LeoChannelConstructor.h"
-#include "inet/common/ModuleAccess.h"
 #include <fstream> //check if needed
 #include <cstring>
+#include <inet/common/INETUtils.h>
+#include <inet/common/XMLUtils.h>
+#include <inet/common/ModuleAccess.h>
+#include <inet/common/lifecycle/LifecycleOperation.h>
+#include <inet/common/lifecycle/ModuleOperations.h>
+
+#include "LeoChannelConstructor.h"
 
 using namespace std;
 namespace inet {
@@ -339,6 +344,7 @@ void LeoChannelConstructor::setUpGSLinks()
                             IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
                             NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
                             if(ie){
+                                processLifecycleCommand(ie, "Start");
                                 configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
                                 configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
                             }
@@ -346,6 +352,7 @@ void LeoChannelConstructor::setUpGSLinks()
                             IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
                             NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
                             if(die){
+                                processLifecycleCommand(die, "Start");
                                 configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
                                 configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
                             }
@@ -374,6 +381,7 @@ void LeoChannelConstructor::setUpGSLinks()
                     IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
                     NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
                     if(ie){
+                        processLifecycleCommand(ie, "Start");
                         configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
                         configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
                     }
@@ -381,6 +389,7 @@ void LeoChannelConstructor::setUpGSLinks()
                     IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
                     NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
                     if(die){
+                        processLifecycleCommand(die, "Start");
                         configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
                         configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
                     }
@@ -401,6 +410,9 @@ void LeoChannelConstructor::setUpGSLinks()
                            // configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
                             configurator->removeNextHopInterface(gsMod, satMod);//, die->getInterfaceId());
                             gsMod->gate("pppg$o", i)->disconnect();
+
+                            NetworkInterface* ie = dynamic_cast<NetworkInterface*>(gsMod->getSubmodule("ppp", i));
+                            processLifecycleCommand(ie, "Crash");
                         }
                     }
                 }
@@ -411,6 +423,9 @@ void LeoChannelConstructor::setUpGSLinks()
                         if((endGate->getOwnerModule()->getOwner()->getOwner() == gsMod)){
                             configurator->removeNextHopInterface(satMod, gsMod);
                             satMod->gate("pppg$o", i)->disconnect();
+
+                            NetworkInterface* ie = dynamic_cast<NetworkInterface*>(satMod->getSubmodule("ppp", i));
+                            processLifecycleCommand(ie, "Crash");
                         }
                     }
                 }
@@ -541,10 +556,30 @@ void LeoChannelConstructor::createChannel(std::string delay, cGate *gate1, cGate
     gate1->connectTo(gate2, channel);
 }
 
-bool LeoChannelConstructor::handleOperationStage(LifecycleOperation *operation, IDoneCallback *doneCallback)
+void LeoChannelConstructor::processLifecycleCommand(cModule *module, std::string command)
 {
-    return true;
+    LifecycleOperation *operation;
+
+    if (command == "Start") {
+        operation = new ModuleStartOperation();
+    }
+    else if (command == "Stop") {
+        operation = new ModuleStopOperation();
+    }
+    else if (command == "Crash") {
+        operation = new ModuleCrashOperation();
+    }
+    else {
+        operation = check_and_cast<LifecycleOperation *>(inet::utils::createOne(command.c_str()));
+    }
+
+    cXMLAttributeMap* emptyParam;
+    std::map<basic_string<char>, basic_string<char>> emptyMap;
+    operation->initialize(module, emptyMap);
+
+    initiateOperation(operation);
 }
+
 void LeoChannelConstructor::finish()
 {
 

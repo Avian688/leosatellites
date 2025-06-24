@@ -2,7 +2,6 @@
 #define COMMON_LEOCHANNELCONSTRUCTOR_H_
 
 #include <inet/common/INETDefs.h>
-#include <inet/common/ModuleAccess.h>
 #include <inet/networklayer/common/L3AddressResolver.h>
 #include <inet/common/lifecycle/ILifecycle.h>
 #include <inet/networklayer/common/InterfaceTable.h>
@@ -10,6 +9,7 @@
 #include <inet/linklayer/ppp/Ppp.h>
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
 #include <inet/queueing/queue/PacketQueue.h>
+#include <inet/common/lifecycle/LifecycleController.h>
 
 #include "../networklayer/ipv4/LeoIpv4RoutingTable.h"
 #include "../networklayer/configurator/ipv4/LeoIpv4NetworkConfigurator.h"
@@ -18,7 +18,7 @@
 
 namespace inet{
 
-class INET_API LeoChannelConstructor: public cSimpleModule, public ILifecycle {
+class INET_API LeoChannelConstructor: public cSimpleModule, public LifecycleController {
 public:
     LeoChannelConstructor();
     virtual ~LeoChannelConstructor();
@@ -33,7 +33,6 @@ protected:
     int queueSize;
     simtime_t currentInterval;
 
-    virtual bool handleOperationStage(LifecycleOperation *operation, IDoneCallback *doneCallback) override;
     void updatePPPModules(cModule *mod);
     std::pair<cGate*,cGate*> getNextFreeGate(cModule *mod);
     void setUpInterfaces();
@@ -47,6 +46,7 @@ protected:
     virtual void prepareInterface(NetworkInterface *interfaceEntry);
     void createChannel(std::string delay, cGate *gate1, cGate*gate2);
     void scheduleUpdate(bool simStart);
+    void processLifecycleCommand(cModule *module, std::string command);
     virtual void finish() override;
 
 protected:
