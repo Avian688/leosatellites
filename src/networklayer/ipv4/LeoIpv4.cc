@@ -41,15 +41,22 @@ void LeoIpv4::initialize(int stage)
     }
 }
 
-void LeoIpv4::addKNextHop(int k, int destNode, int nextInterfaceID){
+void LeoIpv4::setNodeId(int id)
+{
+    nodeId = id;
+}
+void LeoIpv4::addKNextHop(int k, int destNode, int nextInterfaceID)
+{
     kNextHops[k][destNode] = nextInterfaceID;
 }
 
-void LeoIpv4::addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID){
+void LeoIpv4::addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID)
+{
     nextHops[destinationAddr] = nextInterfaceID;
 }
 
-void LeoIpv4::addNextHopStr(std::string destinationAddr, std::string nextInterfaceID){
+void LeoIpv4::addNextHopStr(std::string destinationAddr, std::string nextInterfaceID)
+{
     nextHopsStr[destinationAddr] = nextInterfaceID;
 }
 
@@ -73,7 +80,7 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
     EV_INFO << "Routing " << packet << " with destination = " << destAddr << ", ";
     //std::cout << "Routing " << packet << " with destination = " << destAddr << ", ";
     // if output port was explicitly requested, use that, otherwise use Ipv4 routing
-    if (destIE) {
+    //if (destIE) {
         EV_DETAIL << "using manually specified output interface " << destIE->getInterfaceName() << "\n";
         // and nextHopAddr remains unspecified
         //if (!nextHopAddress.isUnspecified()) {
@@ -88,20 +95,50 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
 //                packet->addTagIfAbsent<NextHopAddressReq>()->setNextHopAddress(re->getGateway());
 //            }
 //        }
-    }
-    else {
+    //}
+    //else {
         // use Ipv4 routing (lookup in routing table)
-        int modId = configurator->getModuleIdFromIpAddress(destAddr.getInt());
+    int modId = configurator->getModuleIdFromIpAddress(destAddr.getInt()); //TODO check if IP address is end point, if is, get ground station IP
 
-        int interfaceID = kNextHops[1][modId];
-        if (interfaceID) {
-            packet->addTagIfAbsent<InterfaceReq>()->setInterfaceId(interfaceID);
-            hopFound = true;
+    int interfaceID = kNextHops[1][modId];
+
+    // No Interface ID = no hop in k next hops, usually due to destination being an endpoint
+    // Node Type == 2 means destination is a end point
+    // !modID means mod id not found, edge case
+    if(!interfaceID || configurator->getNodeTypeCode(modId) == 2 || !modId){
+        int gsModId = configurator->getGroundStationFromEndPoint(modId);
+        interfaceID = kNextHops[1][gsModId];
+
+        //If current node is a ground station, and has end point attached, then interfaceID = interfaceID - 1
+        if(interfaceID > 0 && configurator->hasConnectedEndpoint(nodeId)){
+            interfaceID = interfaceID + 1;
         }
-        else{
-            EV_WARN << "\nInterface ID not found!: ID " << interfaceID << " at time: " << simTime() << endl;
+
+//        if(interfaceID == 108){
+//            std::cout << "\nFOUND 108 INTERFACE" << endl;
+//            std::cout << "\n NODE ID: " << nodeId << endl;
+//            std::cout << "\n configurator->hasConnectedEndpoint(nodeId)" << configurator->hasConnectedEndpoint(nodeId) << endl;
+//            //Update check as hasConnectedEndpoint is wrong here
+//        }
+
+//        if(configurator->getNodeTypeCode(nodeId) == 1){
+//            interfaceID = interfaceID - 1;
+//        }
+        if(interfaceID <= 0){
+            //Must be routing from user terminal, send to first ppp link
+            interfaceID = 101;
         }
     }
+
+    if (interfaceID) {
+        packet->addTagIfAbsent<InterfaceReq>()->setInterfaceId(interfaceID);
+        hopFound = true;
+    }
+    else{
+        EV_WARN << "\nInterface ID not found!: ID " << interfaceID << " at time: " << simTime() << endl;
+        std::cout << "\nInterface ID not found!: Dest Addr " << destAddr.getInt() << " Mod ID " << modId << " ID " << interfaceID << " at time: " << simTime() << endl;
+    }
+    //}
 
     if (!hopFound) {    // no route found
         EV_WARN << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";

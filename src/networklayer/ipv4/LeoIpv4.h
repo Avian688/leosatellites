@@ -29,10 +29,12 @@ protected:
     virtual void initialize(int stage) override;
     virtual void routeUnicastPacket(Packet *packet) override;
     virtual void stop() override;
+    int nodeId;
     std::map<uint32_t,uint32_t> nextHops;   //Destination Address (int format) -> Interface ID
     std::map<std::string,std::string> nextHopsStr;   //Destination Address (int format) -> Interface ID
     std::map<int, std::map<int,int>> kNextHops;
 public:
+    void setNodeId(int id);
     void addKNextHop(int k, int destinationNode, int nextInterfaceID);
     void addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID);
     void addNextHopStr(std::string destinationAddr, std::string nextInterfaceID);

@@ -16,9 +16,6 @@ import inet.common.geometry.common.SimpleGeographicCoordinateSystem;
 import inet.common.geometry.common.OsgGeographicCoordinateSystem;
 import inet.environment.objectcache.GridObjectCache;
 
-import leosatellites.physicallayer.unitdisk.SatelliteUnitDiskTransmitter;
-import leosatellites.physicallayer.propagation.SatellitePropagation;
-
 import leosatellites.common.LeoChannelConstructor;
 //
 // Network SatSGP4 enables satellite movement on worldmap. This is the primary satellite network that
@@ -31,7 +28,8 @@ network SatSGP4
 {
     parameters:
         int numOfSats; // Number of satellites
-        int numOfGS; // Number of Mission Control Centers
+        int numOfGS; // Number of Ground Stations
+        int numOfClients = default(0); // Number of Clients - you must specify what ground station a client connects to. See EndUser.NED
         double incl;
         double alt;
         int satsPerPlane;

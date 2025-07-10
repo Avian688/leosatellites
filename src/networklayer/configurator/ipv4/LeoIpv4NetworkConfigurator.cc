@@ -49,6 +49,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         // Read satellite network parameters from parent
         numOfSats = parent->par("numOfSats");
         numOfGS = parent->par("numOfGS");
+        numOfClients = parent->par("numOfClients");
         satPerPlane = parent->par("satsPerPlane");
         unsigned int planes = parent->par("numOfPlanes");
 
@@ -108,9 +109,12 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
         verifyModuleIDMappingsFromFile(filePrefix + "/idMap.txt");
 
+        updateModuleIDMappingsClientServer();
+
         igraph_vector_int_init(&islVec, 0);
     }
 }
+
 
 bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 {
@@ -164,7 +168,7 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 
 void LeoIpv4NetworkConfigurator::assignIDtoModules()
 {
-    for(int nodeNum = 0; nodeNum < numOfSats+numOfGS; nodeNum++){
+    for(int nodeNum = 0; nodeNum < numOfSats+numOfGS+(numOfClients*2); nodeNum++){
         nodeModules[nodeNum] = getNodeModule(nodeNum);
     }
 }
@@ -443,8 +447,30 @@ cModule* LeoIpv4NetworkConfigurator::getNodeModule(int nodeNumber)
         std::string nodeName = std::string(networkName + ".satellite[" + std::to_string(nodeNumber) + "]");
         mod = getModuleByPath(nodeName.c_str());
     }
-    else{
+    else if(nodeNumber >= numOfSats && nodeNumber < numOfSats+numOfGS){
         std::string nodeName = std::string(networkName + ".groundStation[" + std::to_string(nodeNumber-numOfSats) + "]");
+        mod = getModuleByPath(nodeName.c_str());
+    }
+    else if(nodeNumber >= numOfSats+numOfGS && nodeNumber < numOfSats+numOfGS+numOfClients){
+        std::string nodeName = std::string(networkName + ".client[" + std::to_string(nodeNumber-(numOfSats+numOfGS)) + "]");
+        mod = getModuleByPath(nodeName.c_str());
+    }
+    else{
+        std::string nodeName = std::string(networkName + ".server[" + std::to_string(nodeNumber-(numOfSats+numOfGS+numOfClients)) + "]");
+        mod = getModuleByPath(nodeName.c_str());
+    }
+    return mod;
+}
+
+cModule* LeoIpv4NetworkConfigurator::getClientServerModule(bool client, int nodeNumber)
+{
+    cModule* mod;
+    if(client){
+        std::string nodeName = std::string(networkName + ".client[" + std::to_string(nodeNumber) + "]");
+        mod = getModuleByPath(nodeName.c_str());
+    }
+    else{
+        std::string nodeName = std::string(networkName + ".server[" + std::to_string(nodeNumber) + "]");
         mod = getModuleByPath(nodeName.c_str());
     }
     return mod;
@@ -512,6 +538,22 @@ void LeoIpv4NetworkConfigurator::writeModuleIDMappingsToFile(const std::string& 
         EV << "Module ID mappings written to " << filePath << "\n";
     }
 
+}
+
+void LeoIpv4NetworkConfigurator::updateModuleIDMappingsClientServer()
+{
+    for (int nodeNum = numOfSats + numOfGS; nodeNum < numOfSats + numOfGS + (numOfClients*2); ++nodeNum) {
+        std::string nodeName;
+        if (nodeNum < numOfSats + numOfGS + numOfClients) {
+            nodeName = "client[" + std::to_string(nodeNum-(numOfSats + numOfGS)) + "]";
+        } else {
+            nodeName = "server[" + std::to_string(nodeNum - (numOfSats + numOfGS + numOfClients)) + "]";
+        }
+
+        std::cout << "\n NODE NAME: " << nodeName << " NODE NUM: " << nodeNum << endl;
+        // Add to dictionary
+        moduleGraphIDMap[nodeName] = nodeNum;
+    }
 }
 
 void LeoIpv4NetworkConfigurator::verifyModuleIDMappingsFromFile(const std::string& filePath)
@@ -617,12 +659,9 @@ void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
                         }
                         cGate* nextHopGateMod = nextHopMod->gate(nextHopIE->getNodeInputGateId());
                         if(srcGateMod->getPathEndGate() == nextHopGateMod->getPathEndGate()){
-                            nextHopInterfaceMap[mod][nextHopMod] = srcIE->getInterfaceId();
                             addIpAddressMap(srcIE->getIpv4Address().getInt(), mod->getFullName());
-
-                            if(srcIE->getIpv4Address().getInt() == 167932916){
-                                std::cout << "\n FOUND HIM (map thinks this is groundStation[5]" << endl;
-                                std::cout << "\n ACTUAL MOD: " << mod->getFullName() << endl;
+                            if(nodeNum < numOfSats+numOfGS){
+                                nextHopInterfaceMap[mod][nextHopMod] = srcIE->getInterfaceId();
                             }
                         }
                     }
@@ -695,6 +734,67 @@ int LeoIpv4NetworkConfigurator::getNodeModuleGraphId(std::string nodeStr)
     return moduleGraphIDMap[nodeStr];
 }
 
+void LeoIpv4NetworkConfigurator::addIpv4NextHop(cModule* mod, int destAddr, int nextHopId)
+{
+    LeoIpv4* ipv4Mod = dynamic_cast<LeoIpv4*>(mod->getModuleByPath(".ipv4.ip"));
+    ipv4Mod->addKNextHop(1, destAddr, nextHopId);
+    ipv4Mod->addNextHop(destAddr, nextHopId);
+}
+
+int LeoIpv4NetworkConfigurator::getGroundStationFromEndPoint(int endPointModID)
+{
+    auto it = endpointToNodeMap.find(endPointModID);
+    if (it != endpointToNodeMap.end()) {
+        return it->second;
+    }
+    return -1;
+}
+
+// 0 = sat, 1 = gs, 2 = cs, -1 = unknown
+int LeoIpv4NetworkConfigurator::getNodeTypeCode(int modId)
+{
+    if (modId < 0) return -1;
+
+    if (modId < numOfSats) //Satellite
+        return 0;
+    else if (modId < numOfSats + numOfGS) //Ground Station
+        return 1;
+    else if (modId < numOfSats + modId + (numOfClients*2)) // Client or Server
+        return 2;
+    else
+        return -1;
+}
+
+void LeoIpv4NetworkConfigurator::setIpv4NodeIds()
+{
+    for (const auto& [id, mod] : nodeModules) {
+
+        cModule* ipModule = mod->getModuleByPath(".ipv4.ip");
+        if (!ipModule) continue;
+
+        LeoIpv4* ipv4Mod = dynamic_cast<LeoIpv4*>(ipModule);
+        if (!ipv4Mod) continue;
+
+        ipv4Mod->setNodeId(id);
+    }
+}
+
+void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
+{
+    for (const auto& [endPointModID, modulePtr] : nodeModules) {
+        std::string typeName = modulePtr->getNedTypeName();
+        if(typeName == "leosatellites.base.EndUser"){
+            std::string gsName = modulePtr->par("connectModule");
+            endpointToNodeMap[endPointModID] = getNodeModuleGraphId(gsName);
+            nodeToEndpointMap[getNodeModuleGraphId(gsName)] = endPointModID;
+        }
+    }
+}
+
+bool LeoIpv4NetworkConfigurator::hasConnectedEndpoint(int nodeId) {
+    bool found = nodeToEndpointMap.find(nodeId) != nodeToEndpointMap.end();
+    return nodeToEndpointMap.find(nodeId) != nodeToEndpointMap.end();
+}
 // TODO If we set IPAddress in LeoChannelConstructor, do we need this? doubt it
 //void LeoIpv4NetworkConfigurator::configureInterface(InterfaceInfo *interfaceInfo)
 //{

@@ -33,7 +33,8 @@ protected:
     int queueSize;
     simtime_t currentInterval;
 
-    void updatePPPModules(cModule *mod);
+    void updatePPPModules(cModule *mod, bool addToGraph);
+    void setUpIpLayer(cModule* module, NetworkInterface* interface);
     std::pair<cGate*,cGate*> getNextFreeGate(cModule *mod);
     void setUpInterfaces();
 
@@ -42,9 +43,10 @@ protected:
     virtual void setUpSimulation();
     virtual void updateChannels();
     virtual void setUpGSLinks();
+    virtual void setUpClientServerInterfaces();
     virtual void addPPPInterfaces();
     virtual void prepareInterface(NetworkInterface *interfaceEntry);
-    void createChannel(std::string delay, cGate *gate1, cGate*gate2);
+    void createChannel(std::string delay, cGate *gate1, cGate*gate2, bool endPointChannel);
     void scheduleUpdate(bool simStart);
     void processLifecycleCommand(cModule *module, std::string command);
     virtual void finish() override;
@@ -54,6 +56,7 @@ protected:
     int numOfSats;
     int numOfGS;
     int numOfPlanes;
+    int numOfClients;
     int satPerPlane;
     const char* interfaceType;
 

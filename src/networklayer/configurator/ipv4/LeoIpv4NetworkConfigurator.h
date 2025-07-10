@@ -48,17 +48,20 @@ protected:
 
     virtual void writeModuleIDMappingsToFile(const std::string& filename);
     virtual void verifyModuleIDMappingsFromFile(const std::string& filePath);
+    virtual void updateModuleIDMappingsClientServer();
 protected:
     //internal state
     Topology topology;
     bool loadFiles;
     std::unordered_map<int, cModule*> nodeModules;
+
     std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;
     std::map<cModule*, std::map<cModule*, int>> nextHopInterfaceMap;
     std::string networkName;
     std::string filePrefix;
     unsigned int numOfSats;
     unsigned int numOfGS;
+    unsigned int numOfClients;
     unsigned int numOfPlanes;
     unsigned int satPerPlane;
     unsigned int numOfISLs;
@@ -74,6 +77,10 @@ protected:
     std::map<int, int> routerIdMap;
 
     std::map<std::string, int> moduleGraphIDMap;
+
+    std::unordered_map<int, int> nodeToEndpointMap;// groundStationID → endPointModID
+    std::unordered_map<int, int> endpointToNodeMap; // endPointModID → groundStationID
+
 public:
     virtual void establishInitialISLs();
     virtual void updateForwardingStates(simtime_t currentInterval);
@@ -88,8 +95,21 @@ public:
     virtual void eraseIpAddressMap(int address);
 
     virtual cModule* getNodeModule(int nodeNumber);
+    virtual cModule* getClientServerModule(bool client, int nodeNumber);
 
     virtual int getNodeModuleGraphId(std::string nodeStr);
+
+    virtual void addIpv4NextHop(cModule* mod, int destAddr, int nextHopId);
+
+    virtual int getGroundStationFromEndPoint(int endPointModID);
+
+    virtual int getNodeTypeCode(int modId);
+
+    virtual void setIpv4NodeIds();
+
+    virtual void setGroundStationsWithEndpoints();
+
+    virtual bool hasConnectedEndpoint(int nodeId);
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */
