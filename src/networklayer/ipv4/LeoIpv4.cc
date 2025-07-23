@@ -109,7 +109,7 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
         int gsModId = configurator->getGroundStationFromEndPoint(modId);
         interfaceID = kNextHops[1][gsModId];
 
-        //If current node is a ground station, and has end point attached, then interfaceID = interfaceID - 1
+        //If current node is a ground station, and has end point attached, then interfaceID = interfaceID + 1
         int totalEndpoints = configurator->getTotalEndpoints(nodeId);
         if(interfaceID > 0 && totalEndpoints > 0){
             interfaceID = interfaceID + totalEndpoints;
@@ -126,8 +126,13 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
 //            interfaceID = interfaceID - 1;
 //        }
         if(interfaceID <= 0){
-            //Must be routing from user terminal, send to first ppp link
-            interfaceID = 101;
+            if(totalEndpoints > 0){
+                interfaceID = 100 + configurator->getEndpointId(modId);
+            }
+            else{
+                //Must be routing from user terminal, send to first ppp link
+                interfaceID = 101;
+            }
         }
     }
 

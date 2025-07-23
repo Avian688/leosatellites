@@ -80,7 +80,8 @@ protected:
     std::map<std::string, int> moduleGraphIDMap;
 
     std::unordered_map<int, int> endpointToNodeMap; // endPointModID → groundStationID
-    std::unordered_map<int, int> nodeNumEndpointsMap; // endPointModID → groundStationID
+    std::unordered_map<int, int> nodeNumEndpointsMap; // groundStationID → numOfEndPoints
+    std::unordered_map<int, int> endPointPos; // endPointModID → what id endPoint is
 
 public:
     virtual void establishInitialISLs();
@@ -111,6 +112,8 @@ public:
     virtual void setGroundStationsWithEndpoints();
 
     virtual int getTotalEndpoints(int nodeId);
+
+    virtual int getEndpointId(int nodeId);
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

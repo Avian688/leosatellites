@@ -791,8 +791,17 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
             std::string gsName = modulePtr->par("connectModule");
             endpointToNodeMap[modId] = getNodeModuleGraphId(gsName);
             nodeNumEndpointsMap[getNodeModuleGraphId(gsName)] = nodeNumEndpointsMap[getNodeModuleGraphId(gsName)]+1;
+            endPointPos[modId] = modulePtr->getIndex()+1;
         }
     }
+}
+
+int LeoIpv4NetworkConfigurator::getEndpointId(int nodeId) {
+    auto endPointNum = endPointPos.find(nodeId);
+    if(endPointNum != endPointPos.end()){
+        return endPointNum->second;
+    }
+    return 1;
 }
 
 int LeoIpv4NetworkConfigurator::getTotalEndpoints(int nodeId) {
