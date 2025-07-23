@@ -110,8 +110,9 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
         interfaceID = kNextHops[1][gsModId];
 
         //If current node is a ground station, and has end point attached, then interfaceID = interfaceID - 1
-        if(interfaceID > 0 && configurator->hasConnectedEndpoint(nodeId)){
-            interfaceID = interfaceID + 1;
+        int totalEndpoints = configurator->getTotalEndpoints(nodeId);
+        if(interfaceID > 0 && totalEndpoints > 0){
+            interfaceID = interfaceID + totalEndpoints;
         }
 
 //        if(interfaceID == 108){

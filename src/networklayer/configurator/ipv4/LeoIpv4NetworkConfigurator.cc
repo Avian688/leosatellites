@@ -51,6 +51,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         numOfGS = parent->par("numOfGS");
         numOfClients = parent->par("numOfClients");
         satPerPlane = parent->par("satsPerPlane");
+        configLocation = par("configLocation").stringValue();
         unsigned int planes = parent->par("numOfPlanes");
 
         // Calculate total number of planes (ensures all satellites are distributed)
@@ -105,9 +106,9 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
             }
         }
 
-        writeModuleIDMappingsToFile(filePrefix + "/idMap.txt");
+        writeModuleIDMappingsToFile(configLocation + filePrefix + "/idMap.txt");
 
-        verifyModuleIDMappingsFromFile(filePrefix + "/idMap.txt");
+        verifyModuleIDMappingsFromFile(configLocation + filePrefix + "/idMap.txt");
 
         updateModuleIDMappingsClientServer();
 
@@ -118,7 +119,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
 bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 {
-    std::string fName = filePrefix + "/" + currentInterval.str() + ".bin";
+    std::string fName = configLocation + filePrefix + "/" + currentInterval.str() + ".bin";
 
     if (!std::filesystem::is_regular_file(fName))
         return false;
@@ -550,7 +551,6 @@ void LeoIpv4NetworkConfigurator::updateModuleIDMappingsClientServer()
             nodeName = "server[" + std::to_string(nodeNum - (numOfSats + numOfGS + numOfClients)) + "]";
         }
 
-        std::cout << "\n NODE NAME: " << nodeName << " NODE NUM: " << nodeNum << endl;
         // Add to dictionary
         moduleGraphIDMap[nodeName] = nodeNum;
     }
@@ -781,19 +781,26 @@ void LeoIpv4NetworkConfigurator::setIpv4NodeIds()
 
 void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
 {
-    for (const auto& [endPointModID, modulePtr] : nodeModules) {
+    for (const auto& [modId, modulePtr] : nodeModules) {
+        nodeNumEndpointsMap[modId] = 0;
+    }
+
+    for (const auto& [modId, modulePtr] : nodeModules) {
         std::string typeName = modulePtr->getNedTypeName();
         if(typeName == "leosatellites.base.EndUser"){
             std::string gsName = modulePtr->par("connectModule");
-            endpointToNodeMap[endPointModID] = getNodeModuleGraphId(gsName);
-            nodeToEndpointMap[getNodeModuleGraphId(gsName)] = endPointModID;
+            endpointToNodeMap[modId] = getNodeModuleGraphId(gsName);
+            nodeNumEndpointsMap[getNodeModuleGraphId(gsName)] = nodeNumEndpointsMap[getNodeModuleGraphId(gsName)]+1;
         }
     }
 }
 
-bool LeoIpv4NetworkConfigurator::hasConnectedEndpoint(int nodeId) {
-    bool found = nodeToEndpointMap.find(nodeId) != nodeToEndpointMap.end();
-    return nodeToEndpointMap.find(nodeId) != nodeToEndpointMap.end();
+int LeoIpv4NetworkConfigurator::getTotalEndpoints(int nodeId) {
+    auto numEndpoints = nodeNumEndpointsMap.find(nodeId);
+    if(numEndpoints != nodeNumEndpointsMap.end()){
+        return numEndpoints->second;
+    }
+    return 0;
 }
 // TODO If we set IPAddress in LeoChannelConstructor, do we need this? doubt it
 //void LeoIpv4NetworkConfigurator::configureInterface(InterfaceInfo *interfaceInfo)

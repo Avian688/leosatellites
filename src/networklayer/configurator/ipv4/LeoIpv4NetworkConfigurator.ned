@@ -24,4 +24,6 @@ simple LeoIpv4NetworkConfigurator extends L3NetworkConfiguratorBase
         @display("i=block/cogwheel");
         int numOfKPaths = default(1);
         bool loadFiles = default (true);
+        
+        string configLocation = default (""); //Current Folder
 }

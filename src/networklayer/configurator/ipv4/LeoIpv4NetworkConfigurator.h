@@ -58,6 +58,7 @@ protected:
     std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;
     std::map<cModule*, std::map<cModule*, int>> nextHopInterfaceMap;
     std::string networkName;
+    std::string configLocation;
     std::string filePrefix;
     unsigned int numOfSats;
     unsigned int numOfGS;
@@ -78,8 +79,8 @@ protected:
 
     std::map<std::string, int> moduleGraphIDMap;
 
-    std::unordered_map<int, int> nodeToEndpointMap;// groundStationID → endPointModID
     std::unordered_map<int, int> endpointToNodeMap; // endPointModID → groundStationID
+    std::unordered_map<int, int> nodeNumEndpointsMap; // endPointModID → groundStationID
 
 public:
     virtual void establishInitialISLs();
@@ -109,7 +110,7 @@ public:
 
     virtual void setGroundStationsWithEndpoints();
 
-    virtual bool hasConnectedEndpoint(int nodeId);
+    virtual int getTotalEndpoints(int nodeId);
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */
