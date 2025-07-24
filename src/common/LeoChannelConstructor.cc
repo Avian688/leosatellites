@@ -504,12 +504,12 @@ void LeoChannelConstructor::setUpGSLinks()
 
 void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
 {
-    cModuleType *pppModuleType;
+    cModuleType *mainPppModuleType;
     if(!addToGraph){
-        pppModuleType = cModuleType::get("leosatellites.linklayer.ppp.PppInterfaceMutable");
+        mainPppModuleType = cModuleType::get("leosatellites.linklayer.ppp.PppInterfaceMutable");
     }
     else{
-        pppModuleType = cModuleType::get(interfaceType);
+        mainPppModuleType = cModuleType::get(interfaceType);
     }
 
     int submoduleVectorSize = mod->gateSize("pppg");
@@ -523,9 +523,24 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
     mod->setSubmoduleVectorSize("ppp", submoduleVectorSize);
     cModule *module = nullptr;
     for(int i = 0; i < submoduleVectorSize; i++){
+        cModuleType *pppModuleType = mainPppModuleType;
         if(!mod->getSubmodule("ppp", i)){
             cGate *srcGateOut = mod->gateHalf("pppg", cGate::OUTPUT, i);  //ADD BACK WITH RELEVANT CODE AT SOME POINT
             cGate *srcGateIn = mod->gateHalf("pppg", cGate::INPUT, i);
+
+            cModule* destMod;
+
+            std::string gateOwnerName = srcGateOut->getPathEndGate()->getBaseName();
+            if(gateOwnerName == "pppg"){
+                destMod = srcGateOut->getPathEndGate()->getOwnerModule();
+            }
+            else{
+                destMod = srcGateOut->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
+            }
+
+            if(configurator->getNodeTypeCode(configurator->getNodeModuleGraphId(destMod->getFullName())) == 2){ // If connected to end user
+                pppModuleType = cModuleType::get("leosatellites.linklayer.ppp.PppInterfaceMutable");
+            }
 
             module = pppModuleType->create("ppp", mod, i);
             //module->getSubmodule("queue")->par("packetCapacity") = 102;
@@ -572,15 +587,6 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
             //std::cout << "\n GATE IN NODE: " << srcGateOut->getPathEndGate()->getOwner()->getOwner()->getOwner()->getFullName() << endl;
             //std::cout << "\n GATE OUT NODE: " << mod->getFullName() << endl;
 
-            cModule* destMod;
-
-            std::string gateOwnerName = srcGateOut->getPathEndGate()->getBaseName();
-            if(gateOwnerName == "pppg"){
-                destMod = srcGateOut->getPathEndGate()->getOwnerModule();
-            }
-            else{
-                destMod = srcGateOut->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
-            }
             NetworkInterface* die = dynamic_cast<NetworkInterface*>(destMod->getSubmodule("ppp", i));
             if(addToGraph){
                 configurator->addIpAddressMap(ie->getIpv4Address().getInt(), mod->getFullName());
