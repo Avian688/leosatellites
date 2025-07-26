@@ -789,9 +789,25 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
         std::string typeName = modulePtr->getNedTypeName();
         if(typeName == "leosatellites.base.EndUser"){
             std::string gsName = modulePtr->par("connectModule");
-            endpointToNodeMap[modId] = getNodeModuleGraphId(gsName);
-            nodeNumEndpointsMap[getNodeModuleGraphId(gsName)] = nodeNumEndpointsMap[getNodeModuleGraphId(gsName)]+1;
-            endPointPos[modId] = modulePtr->getIndex()+1;
+            int gsId = getNodeModuleGraphId(gsName);
+            endpointToNodeMap[modId] = gsId;
+            nodeNumEndpointsMap[gsId] = nodeNumEndpointsMap[gsId]+1;
+            //endPointPos[modId] = modulePtr->getIndex()+1;
+            auto gsMod = nodeModules[gsId];
+            for(int i = 0; i < gsMod->gateSize("pppg$o"); i++){  //check each possible pppg gate
+                cGate* srcGate = gsMod->gate("pppg$o", i);
+                cGate* srcGate2 = gsMod->gate("pppg$i", i);
+                if(srcGate->isConnected()){
+                    //std::cout << "\n Module: " << modulePtr->str() << endl;
+                    //std::cout << "\n Module Gate: " <<  srcGate->getPathEndGate()->getOwnerModule()->getOwner()->getOwner()->str() << endl;
+                    if(modulePtr == srcGate->getPathEndGate()->getOwnerModule()->getOwner()->getOwner()){
+                        endPointPos[modId] = i+1;
+                        //std::cout << "\n endPointPos[modId] " << modId << endl;
+                        //std::cout << "\n modulePtr->getIndex()+1: " << i+1 << endl;
+                    }
+                }
+            }
+
         }
     }
 }

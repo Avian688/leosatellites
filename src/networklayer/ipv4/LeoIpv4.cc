@@ -128,6 +128,9 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
         if(interfaceID <= 0){
             if(totalEndpoints > 0){
                 interfaceID = 100 + configurator->getEndpointId(modId);
+                //std::cout << "\n Destination Node: " << modId << endl;
+                //std::cout << "\n Current Node: " << nodeId << endl;
+                //std::cout << "\n Interface ID: " << interfaceID << endl;
             }
             else{
                 //Must be routing from user terminal, send to first ppp link
