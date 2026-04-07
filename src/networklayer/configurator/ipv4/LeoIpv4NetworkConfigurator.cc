@@ -25,9 +25,16 @@ static void silent_warning_handler(const char *reason, const char *file, int lin
     // Silence all warnings as the console will be filled with warnings if a ground station cannot connect to a satellite
 }
 
+static bool isEndpointTypeName(const std::string& typeName)
+{
+    return typeName == "leosatellites.base.EndUser" || typeName == "leosatellites.base.UserTerminal";
+}
+
 LeoIpv4NetworkConfigurator::~LeoIpv4NetworkConfigurator()
 {
     nodeModules.clear();
+    ipv4Modules.clear();
+    nextHopInterfaceMatrix.clear();
     igraph_vector_int_destroy(&islVec);
 }
 
@@ -50,6 +57,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         numOfSats = parent->par("numOfSats");
         numOfGS = parent->par("numOfGS");
         numOfClients = parent->par("numOfClients");
+        numOfUserTerminals = parent->par("numOfUserTerminals");
         satPerPlane = parent->par("satsPerPlane");
         configLocation = par("configLocation").stringValue();
         unsigned int planes = parent->par("numOfPlanes");
@@ -62,6 +70,8 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
         // Assign unique IDs to modules (custom method)
         assignIDtoModules();
+        ipv4Modules.resize(nodeModules.size(), nullptr);
+        nextHopInterfaceMatrix.assign(nodeModules.size(), std::vector<int>(nodeModules.size(), -1));
 
         // Path calculation parameters
         numOfKPaths = par("numOfKPaths");
@@ -128,8 +138,6 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
     if (!file.is_open())
         return false;
 
-    static std::unordered_map<int, LeoIpv4*> cachedIpv4;
-
     while (true) {
         int nodeId;
         int destAddr;
@@ -143,21 +151,16 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
         if (file.eof() || file.fail())
             break;
 
-        // Check cache
-        LeoIpv4* ipv4Mod = nullptr;
-        auto cached = cachedIpv4.find(nodeId);
-        if (cached != cachedIpv4.end()) {
-            ipv4Mod = cached->second;
-        }
-        else {
-            auto it = nodeModules.find(nodeId);
-            if (it == nodeModules.end())
-                continue;
-            cModule* nodeMod = it->second;
+        if (nodeId < 0 || nodeId >= static_cast<int>(ipv4Modules.size()))
+            continue;
+
+        LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
+        if (ipv4Mod == nullptr) {
+            cModule *nodeMod = nodeModules[nodeId];
             ipv4Mod = dynamic_cast<LeoIpv4*>(nodeMod->getModuleByPath(".ipv4.ip"));
             if (!ipv4Mod)
                 continue;
-            cachedIpv4[nodeId] = ipv4Mod;
+            ipv4Modules[nodeId] = ipv4Mod;
         }
 
         ipv4Mod->addKNextHop(1, destAddr, nextHopId);
@@ -169,8 +172,12 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 
 void LeoIpv4NetworkConfigurator::assignIDtoModules()
 {
-    for(int nodeNum = 0; nodeNum < numOfSats+numOfGS+(numOfClients*2); nodeNum++){
+    const int totalNodes = numOfSats + numOfGS + (numOfClients * 2) + numOfUserTerminals;
+    nodeModules.resize(totalNodes, nullptr);
+    for(int nodeNum = 0; nodeNum < totalNodes; nodeNum++){
         nodeModules[nodeNum] = getNodeModule(nodeNum);
+        if (nodeModules[nodeNum] != nullptr)
+            moduleGraphIdByModule[nodeModules[nodeNum]] = nodeNum;
     }
 }
 
@@ -188,6 +195,12 @@ void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterva
 
 }
 
+void LeoIpv4NetworkConfigurator::clearGroundStationLinks()
+{
+    while (!groundStationLinks.empty())
+        groundStationLinks.pop();
+}
+
 void LeoIpv4NetworkConfigurator::establishInitialISLs()
 {
     unsigned int islVecIterator = 0;
@@ -197,14 +210,14 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
             numOfSatsInPlane = numOfSats;
         }
         for(unsigned int satNum = planeNum*satPerPlane; satNum < numOfSatsInPlane; satNum++){
-            cModule *satMod = nodeModules.find(satNum)->second; // get source satellite module
+            cModule *satMod = nodeModules[satNum]; // get source satellite module
             SatelliteMobility* sourceSatMobility = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"));
             int destSatNumA = (satNum+1)%(satPerPlane*(planeNum+1));
             if(destSatNumA == 0){
                 destSatNumA = planeNum*satPerPlane; //If number is zero, must be start of orbital plane
             }
             if(destSatNumA < numOfSats){
-                cModule *destModA = nodeModules.find(destSatNumA)->second;
+                cModule *destModA = nodeModules[destSatNumA];
                 //VECTOR(islVec)[islVecIterator] = satNum; VECTOR(islVec)[islVecIterator+1] = destSatNumA;
                 igraph_vector_int_push_back(&islVec, satNum);
                 igraph_vector_int_push_back(&islVec, destSatNumA);
@@ -232,7 +245,7 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
             }
             int destSatNumB = (satNum + satPerPlane);// % totalSats;
             if(destSatNumB < numOfSats){
-                cModule *destModB = nodeModules.find(destSatNumB)->second;
+                cModule *destModB = nodeModules[destSatNumB];
                 //VECTOR(islVec)[islVecIterator] = satNum; VECTOR(islVec)[islVecIterator+1] = destSatNumB;
                 igraph_vector_int_push_back(&islVec, satNum);
                 igraph_vector_int_push_back(&islVec, destSatNumB);
@@ -271,8 +284,14 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
     fout.open(fName, std::ios::binary | std::ios::app);
 
     for (int nodeNum = 0; nodeNum < numOfSats+numOfGS; nodeNum++) {
-        cModule* mod = nodeModules.find(nodeNum)->second;
-        dynamic_cast<LeoIpv4 *>(mod->getModuleByPath(".ipv4.ip"))->clearNextHops();
+        LeoIpv4 *ipv4Mod = ipv4Modules[nodeNum];
+        if (ipv4Mod == nullptr) {
+            cModule* mod = nodeModules[nodeNum];
+            ipv4Mod = dynamic_cast<LeoIpv4 *>(mod->getModuleByPath(".ipv4.ip"));
+            ipv4Modules[nodeNum] = ipv4Mod;
+        }
+        if (ipv4Mod != nullptr)
+            ipv4Mod->clearNextHops();
     }
     igraph_t constellationTopology;
     igraph_vector_int_t shortestPathVertexVec, shortestPathEdgesVec;
@@ -327,18 +346,20 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
         int rDuration = 0;
         for(int sourceNodeNum = 0; sourceNodeNum < numOfSats+numOfGS; sourceNodeNum++){
             igraph_get_all_shortest_paths_dijkstra(&constellationTopology, &vertexPaths, &edgePaths, /*nrgeo=*/ &shortestPathVertexVec, /*from=*/ sourceNodeNum, /*to=*/ igraph_vss_all(), /*weights=*/ &weightsVec, /*mode=*/ IGRAPH_ALL);
-            cModule *sourceMod = nodeModules.find(sourceNodeNum)->second;
-            LeoIpv4* srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
+            cModule *sourceMod = nodeModules[sourceNodeNum];
+            LeoIpv4* srcIpv4Mod = ipv4Modules[sourceNodeNum];
+            if (srcIpv4Mod == nullptr) {
+                srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
+                ipv4Modules[sourceNodeNum] = srcIpv4Mod;
+            }
             igraph_vector_int_t *path;
             for (int i = 0; i < igraph_vector_int_list_size(&vertexPaths); i++) {
                 path = igraph_vector_int_list_get_ptr(&vertexPaths, i);
                 int sourceNodeNum = igraph_vector_int_get(path, 0);
                 int nextHopNodeNum = igraph_vector_int_get(path, 1);
                 int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path)-1);
-                cModule *nextHopMod = nodeModules.find(nextHopNodeNum)->second;
-                cModule *destMod = nodeModules.find(destinationNodeNum)->second;
                 if(sourceNodeNum != destinationNodeNum){
-                    int nextHopID = nextHopInterfaceMap.find(sourceMod)->second.find(nextHopMod)->second;
+                    int nextHopID = nextHopInterfaceMatrix[sourceNodeNum][nextHopNodeNum];
 //                    IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
 //                    int totalInterfaces = 0;
 //                    for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
@@ -371,8 +392,12 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
     }
     else{
         for(int sourceNodeNum = 0; sourceNodeNum < numOfSats+numOfGS; sourceNodeNum++){
-            cModule *sourceMod = nodeModules.find(sourceNodeNum)->second;
-            LeoIpv4* srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
+            cModule *sourceMod = nodeModules[sourceNodeNum];
+            LeoIpv4* srcIpv4Mod = ipv4Modules[sourceNodeNum];
+            if (srcIpv4Mod == nullptr) {
+                srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
+                ipv4Modules[sourceNodeNum] = srcIpv4Mod;
+            }
             for(int destNodeNum = 0; destNodeNum <  numOfSats+numOfGS; destNodeNum++){
                 if(sourceNodeNum != destNodeNum){
                     igraph_get_k_shortest_paths(&constellationTopology, &weightsVec, &vertexPaths, &edgePaths, numOfKPaths, sourceNodeNum, destNodeNum, IGRAPH_ALL);
@@ -382,10 +407,8 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                         int sourceNodeNum = igraph_vector_int_get(path, 0);
                         int nextHopNodeNum = igraph_vector_int_get(path, 1);
                         int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path)-1);
-                        cModule *nextHopMod = nodeModules.find(nextHopNodeNum)->second;
-                        cModule *destMod = nodeModules.find(destinationNodeNum)->second;
                         if(sourceNodeNum != destinationNodeNum){
-                            int nextHopID = nextHopInterfaceMap.find(sourceMod)->second.find(nextHopMod)->second;
+                            int nextHopID = nextHopInterfaceMatrix[sourceNodeNum][nextHopNodeNum];
 //                            IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
 //                            for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
 //                                NetworkInterface *destinationIE = destIft->getInterface(j);
@@ -428,12 +451,20 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
 
 void LeoIpv4NetworkConfigurator::addNextHopInterface(cModule* source, cModule* destination, int interfaceID)
 {
-    nextHopInterfaceMap[source][destination] = interfaceID;
+    auto sourceIt = moduleGraphIdByModule.find(source);
+    auto destinationIt = moduleGraphIdByModule.find(destination);
+    if (sourceIt == moduleGraphIdByModule.end() || destinationIt == moduleGraphIdByModule.end())
+        return;
+    nextHopInterfaceMatrix[sourceIt->second][destinationIt->second] = interfaceID;
 }
 
 void LeoIpv4NetworkConfigurator::removeNextHopInterface(cModule* source, cModule* destination)
 {
-    nextHopInterfaceMap[source].erase(destination);
+    auto sourceIt = moduleGraphIdByModule.find(source);
+    auto destinationIt = moduleGraphIdByModule.find(destination);
+    if (sourceIt == moduleGraphIdByModule.end() || destinationIt == moduleGraphIdByModule.end())
+        return;
+    nextHopInterfaceMatrix[sourceIt->second][destinationIt->second] = -1;
 }
 
 void LeoIpv4NetworkConfigurator::addGSLinktoTopologyGraph(int sourceNum, int destNum, double weight)
@@ -456,8 +487,12 @@ cModule* LeoIpv4NetworkConfigurator::getNodeModule(int nodeNumber)
         std::string nodeName = std::string(networkName + ".client[" + std::to_string(nodeNumber-(numOfSats+numOfGS)) + "]");
         mod = getModuleByPath(nodeName.c_str());
     }
-    else{
+    else if (nodeNumber >= numOfSats + numOfGS + numOfClients && nodeNumber < numOfSats + numOfGS + (numOfClients * 2)) {
         std::string nodeName = std::string(networkName + ".server[" + std::to_string(nodeNumber-(numOfSats+numOfGS+numOfClients)) + "]");
+        mod = getModuleByPath(nodeName.c_str());
+    }
+    else {
+        std::string nodeName = std::string(networkName + ".userTerminal[" + std::to_string(nodeNumber-(numOfSats+numOfGS+(numOfClients*2))) + "]");
         mod = getModuleByPath(nodeName.c_str());
     }
     return mod;
@@ -543,13 +578,19 @@ void LeoIpv4NetworkConfigurator::writeModuleIDMappingsToFile(const std::string& 
 
 void LeoIpv4NetworkConfigurator::updateModuleIDMappingsClientServer()
 {
-    for (int nodeNum = numOfSats + numOfGS; nodeNum < numOfSats + numOfGS + (numOfClients*2); ++nodeNum) {
+    const int endpointStart = numOfSats + numOfGS;
+    const int clientEnd = endpointStart + numOfClients;
+    const int serverEnd = clientEnd + numOfClients;
+    const int userTerminalEnd = serverEnd + numOfUserTerminals;
+
+    for (int nodeNum = endpointStart; nodeNum < userTerminalEnd; ++nodeNum) {
         std::string nodeName;
-        if (nodeNum < numOfSats + numOfGS + numOfClients) {
-            nodeName = "client[" + std::to_string(nodeNum-(numOfSats + numOfGS)) + "]";
-        } else {
-            nodeName = "server[" + std::to_string(nodeNum - (numOfSats + numOfGS + numOfClients)) + "]";
-        }
+        if (nodeNum < clientEnd)
+            nodeName = "client[" + std::to_string(nodeNum - endpointStart) + "]";
+        else if (nodeNum < serverEnd)
+            nodeName = "server[" + std::to_string(nodeNum - clientEnd) + "]";
+        else
+            nodeName = "userTerminal[" + std::to_string(nodeNum - serverEnd) + "]";
 
         // Add to dictionary
         moduleGraphIDMap[nodeName] = nodeNum;
@@ -638,10 +679,10 @@ int LeoIpv4NetworkConfigurator::getNextHopInterfaceID(cModule* sourceSatellite, 
 void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
 {
     for(int nodeNum = 0; nodeNum < nodeModules.size(); nodeNum++){
-        cModule *mod = nodeModules.find(nodeNum)->second;
+        cModule *mod = nodeModules[nodeNum];
         for(int nextHopNodeNum = 0; nextHopNodeNum < nodeModules.size(); nextHopNodeNum++){
             if(nodeNum != nextHopNodeNum){
-                cModule *nextHopMod = nodeModules.find(nextHopNodeNum)->second;
+                cModule *nextHopMod = nodeModules[nextHopNodeNum];
                 IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(mod->getSubmodule("interfaceTable"));
                 IInterfaceTable* nextHopIft = dynamic_cast<IInterfaceTable*>(nextHopMod->getSubmodule("interfaceTable"));
 
@@ -661,7 +702,7 @@ void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
                         if(srcGateMod->getPathEndGate() == nextHopGateMod->getPathEndGate()){
                             addIpAddressMap(srcIE->getIpv4Address().getInt(), mod->getFullName());
                             if(nodeNum < numOfSats+numOfGS){
-                                nextHopInterfaceMap[mod][nextHopMod] = srcIE->getInterfaceId();
+                                nextHopInterfaceMatrix[nodeNum][nextHopNodeNum] = srcIE->getInterfaceId();
                             }
                         }
                     }
@@ -716,12 +757,15 @@ double LeoIpv4NetworkConfigurator::computeWiredLinkWeight(Link *link, const char
 
 int LeoIpv4NetworkConfigurator::getModuleIdFromIpAddress(int address)
 {
-    return routerIdMap[address];
+    auto it = routerIdMap.find(address);
+    return it == routerIdMap.end() ? -1 : it->second;
 }
 
 void LeoIpv4NetworkConfigurator::addIpAddressMap(int address, std::string modName)
 {
-    routerIdMap[address] = moduleGraphIDMap[modName];
+    auto it = moduleGraphIDMap.find(modName);
+    if (it != moduleGraphIDMap.end())
+        routerIdMap[address] = it->second;
 }
 
 void LeoIpv4NetworkConfigurator::eraseIpAddressMap(int address)
@@ -731,7 +775,8 @@ void LeoIpv4NetworkConfigurator::eraseIpAddressMap(int address)
 
 int LeoIpv4NetworkConfigurator::getNodeModuleGraphId(std::string nodeStr)
 {
-    return moduleGraphIDMap[nodeStr];
+    auto it = moduleGraphIDMap.find(nodeStr);
+    return it == moduleGraphIDMap.end() ? -1 : it->second;
 }
 
 void LeoIpv4NetworkConfigurator::addIpv4NextHop(cModule* mod, int destAddr, int nextHopId)
@@ -750,7 +795,7 @@ int LeoIpv4NetworkConfigurator::getGroundStationFromEndPoint(int endPointModID)
     return -1;
 }
 
-// 0 = sat, 1 = gs, 2 = cs, -1 = unknown
+// 0 = sat, 1 = gs, 2 = endpoint, -1 = unknown
 int LeoIpv4NetworkConfigurator::getNodeTypeCode(int modId)
 {
     if (modId < 0) return -1;
@@ -759,7 +804,7 @@ int LeoIpv4NetworkConfigurator::getNodeTypeCode(int modId)
         return 0;
     else if (modId < numOfSats + numOfGS) //Ground Station
         return 1;
-    else if (modId < numOfSats + modId + (numOfClients*2)) // Client or Server
+    else if (modId < numOfSats + numOfGS + (numOfClients*2) + numOfUserTerminals) // Client, Server, or User Terminal
         return 2;
     else
         return -1;
@@ -767,57 +812,99 @@ int LeoIpv4NetworkConfigurator::getNodeTypeCode(int modId)
 
 void LeoIpv4NetworkConfigurator::setIpv4NodeIds()
 {
-    for (const auto& [id, mod] : nodeModules) {
+    for (size_t id = 0; id < nodeModules.size(); id++) {
+        cModule *mod = nodeModules[id];
+        if (mod == nullptr)
+            continue;
 
-        cModule* ipModule = mod->getModuleByPath(".ipv4.ip");
-        if (!ipModule) continue;
-
-        LeoIpv4* ipv4Mod = dynamic_cast<LeoIpv4*>(ipModule);
-        if (!ipv4Mod) continue;
-
-        ipv4Mod->setNodeId(id);
+        LeoIpv4* ipv4Mod = ipv4Modules[id];
+        if (ipv4Mod == nullptr) {
+            cModule* ipModule = mod->getModuleByPath(".ipv4.ip");
+            if (!ipModule)
+                continue;
+            ipv4Mod = dynamic_cast<LeoIpv4*>(ipModule);
+            ipv4Modules[id] = ipv4Mod;
+        }
+        if (ipv4Mod != nullptr)
+            ipv4Mod->setNodeId(id);
     }
 }
 
 void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
 {
-    for (const auto& [modId, modulePtr] : nodeModules) {
+    endpointToNodeMap.clear();
+    endpointAttachmentInterfaceIds.clear();
+    endpointUplinkInterfaceIds.clear();
+    for (size_t modId = 0; modId < nodeModules.size(); modId++) {
         nodeNumEndpointsMap[modId] = 0;
     }
 
-    for (const auto& [modId, modulePtr] : nodeModules) {
+    for (size_t modId = 0; modId < nodeModules.size(); modId++) {
+        cModule *modulePtr = nodeModules[modId];
+        if (modulePtr == nullptr)
+            continue;
         std::string typeName = modulePtr->getNedTypeName();
-        if(typeName == "leosatellites.base.EndUser"){
-            std::string gsName = modulePtr->par("connectModule");
-            int gsId = getNodeModuleGraphId(gsName);
-            endpointToNodeMap[modId] = gsId;
-            nodeNumEndpointsMap[gsId] = nodeNumEndpointsMap[gsId]+1;
-            //endPointPos[modId] = modulePtr->getIndex()+1;
-            auto gsMod = nodeModules[gsId];
-            for(int i = 0; i < gsMod->gateSize("pppg$o"); i++){  //check each possible pppg gate
-                cGate* srcGate = gsMod->gate("pppg$o", i);
-                cGate* srcGate2 = gsMod->gate("pppg$i", i);
-                if(srcGate->isConnected()){
-                    //std::cout << "\n Module: " << modulePtr->str() << endl;
-                    //std::cout << "\n Module Gate: " <<  srcGate->getPathEndGate()->getOwnerModule()->getOwner()->getOwner()->str() << endl;
-                    if(modulePtr == srcGate->getPathEndGate()->getOwnerModule()->getOwner()->getOwner()){
-                        endPointPos[modId] = i+1;
-                        //std::cout << "\n endPointPos[modId] " << modId << endl;
-                        //std::cout << "\n modulePtr->getIndex()+1: " << i+1 << endl;
-                    }
-                }
+        if (!isEndpointTypeName(typeName))
+            continue;
+
+        for (int gateIndex = 0; gateIndex < modulePtr->gateSize("pppg$o"); gateIndex++) {
+            cGate *sourceGate = modulePtr->gate("pppg$o", gateIndex);
+            if (!sourceGate->isConnected())
+                continue;
+
+            IInterfaceTable *endpointIft = check_and_cast<IInterfaceTable *>(modulePtr->getSubmodule("interfaceTable"));
+            NetworkInterface *endpointInterface = endpointIft->findInterfaceByNodeOutputGateId(sourceGate->getId());
+            if (endpointInterface == nullptr)
+                continue;
+
+            cGate *endGate = sourceGate->getPathEndGate();
+            if (endGate == nullptr)
+                continue;
+
+            cModule *attachedModule = nullptr;
+            NetworkInterface *attachedInterface = nullptr;
+            if (std::string(endGate->getBaseName()) == "pppg") {
+                attachedModule = endGate->getOwnerModule();
+                IInterfaceTable *attachedIft = check_and_cast<IInterfaceTable *>(attachedModule->getSubmodule("interfaceTable"));
+                attachedInterface = attachedIft->findInterfaceByNodeInputGateId(endGate->getId());
+            }
+            else {
+                cModule *pppModule = endGate->getOwnerModule();
+                cModule *interfaceModule = pppModule != nullptr ? pppModule->getParentModule() : nullptr;
+                attachedModule = interfaceModule != nullptr ? interfaceModule->getParentModule() : nullptr;
+                attachedInterface = dynamic_cast<NetworkInterface *>(interfaceModule);
             }
 
+            if (attachedModule == nullptr || attachedInterface == nullptr)
+                continue;
+
+            int attachedNodeId = getNodeModuleGraphId(attachedModule->getFullName());
+            if (attachedNodeId < 0)
+                continue;
+
+            endpointToNodeMap[modId] = attachedNodeId;
+            nodeNumEndpointsMap[attachedNodeId] = nodeNumEndpointsMap[attachedNodeId] + 1;
+            endpointAttachmentInterfaceIds[modId] = attachedInterface->getInterfaceId();
+            endpointUplinkInterfaceIds[modId] = endpointInterface->getInterfaceId();
+            break;
         }
     }
 }
 
-int LeoIpv4NetworkConfigurator::getEndpointId(int nodeId) {
-    auto endPointNum = endPointPos.find(nodeId);
-    if(endPointNum != endPointPos.end()){
-        return endPointNum->second;
+int LeoIpv4NetworkConfigurator::getEndpointAttachmentInterfaceId(int nodeId) {
+    auto endPointInterface = endpointAttachmentInterfaceIds.find(nodeId);
+    if(endPointInterface != endpointAttachmentInterfaceIds.end()){
+        return endPointInterface->second;
     }
-    return 1;
+    return -1;
+}
+
+int LeoIpv4NetworkConfigurator::getEndpointUplinkInterfaceId(int nodeId) {
+    auto endPointInterface = endpointUplinkInterfaceIds.find(nodeId);
+    if(endPointInterface != endpointUplinkInterfaceIds.end()){
+        return endPointInterface->second;
+    }
+    return -1;
 }
 
 int LeoIpv4NetworkConfigurator::getTotalEndpoints(int nodeId) {
@@ -846,4 +933,3 @@ int LeoIpv4NetworkConfigurator::getTotalEndpoints(int nodeId) {
 //        interfaceData->joinMulticastGroup(multicastGroup);
 //}
 }
-

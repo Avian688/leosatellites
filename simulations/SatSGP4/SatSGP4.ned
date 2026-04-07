@@ -2,6 +2,7 @@ package leosatellites.simulations.SatSGP4;
 
 import leosatellites.base.LaserSatellitePPP;
 import leosatellites.base.GroundStationPPP;
+import leosatellites.base.UserTerminal;
 import os3.base.MissionControlCenter;
 import inet.physicallayer.wireless.common.contract.packetlevel.IRadioMedium;
 import inet.physicallayer.wireless.apsk.packetlevel.ApskScalarRadioMedium;
@@ -30,6 +31,7 @@ network SatSGP4
         int numOfSats; // Number of satellites
         int numOfGS; // Number of Ground Stations
         int numOfClients = default(0); // Number of Clients - you must specify what ground station a client connects to. See EndUser.NED
+        int numOfUserTerminals = default(0); // Number of user terminals that dynamically connect to an overhead satellite
         double incl;
         double alt;
         int satsPerPlane;
@@ -56,6 +58,10 @@ network SatSGP4
         groundStation[numOfGS]: GroundStationPPP {
             parameters:
                 @display("p=238.04,343.535;r=10;i=device/receiverdish");
+        }
+        userTerminal[numOfUserTerminals]: UserTerminal {
+            parameters:
+                @display("p=238.04,360.0;r=10;i=device/laptop");
         }
         channelConstructor: LeoChannelConstructor  {
         	@display("p=704.06,601.0725;i=abstract/person,#17FF39;b=,,rect;is=vl;t=Channel Constructor");

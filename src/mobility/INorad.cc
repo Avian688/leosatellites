@@ -40,6 +40,17 @@ double INorad::getElevation(const double& refLatitude, const double& refLongitud
     return rad2deg(topoLook.m_El);
 }
 
+double INorad::getElevationAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude)
+{
+    const cEci savedEci = eci;
+    const cCoordGeo savedGeoCoord = geoCoord;
+    updateTime(targetTime);
+    const double elevation = getElevation(refLatitude, refLongitude, refAltitude);
+    eci = savedEci;
+    geoCoord = savedGeoCoord;
+    return elevation;
+}
+
 /**
  * Get the azimuth or the satellite. This is an angular measurement used in spherical coordinate systems.
  */
@@ -51,6 +62,17 @@ double INorad::getAzimuth(const double& refLatitude, const double& refLongitude,
         error("Error in Norad::getAzimuth(): Corrupted database.");
     }
     return rad2deg(topoLook.m_Az);
+}
+
+double INorad::getAzimuthAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude)
+{
+    const cEci savedEci = eci;
+    const cCoordGeo savedGeoCoord = geoCoord;
+    updateTime(targetTime);
+    const double azimuth = getAzimuth(refLatitude, refLongitude, refAltitude);
+    eci = savedEci;
+    geoCoord = savedGeoCoord;
+    return azimuth;
 }
 
 /**
@@ -73,6 +95,17 @@ double INorad::getDistance(const double& refLatitude, const double& refLongitude
     return distance;
 }
 
+double INorad::getDistanceAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude)
+{
+    const cEci savedEci = eci;
+    const cCoordGeo savedGeoCoord = geoCoord;
+    updateTime(targetTime);
+    const double distance = getDistance(refLatitude, refLongitude, refAltitude);
+    eci = savedEci;
+    geoCoord = savedGeoCoord;
+    return distance;
+}
+
 
 void INorad::handleMessage(cMessage* msg)
 {
@@ -91,4 +124,9 @@ void INorad::setJulian(std::tm* currentTime)
 bool INorad::isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude)
 {
     return getElevation(refLatitude, refLongitude, refAltitude) > elevationAngle;
+}
+
+bool INorad::isReachableAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude)
+{
+    return getElevationAtTime(targetTime, refLatitude, refLongitude, refAltitude) > elevationAngle;
 }

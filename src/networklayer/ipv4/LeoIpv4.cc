@@ -14,6 +14,8 @@
 // 
 #include "LeoIpv4.h"
 
+#include <algorithm>
+
 #include "../configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 
 namespace inet {
@@ -35,9 +37,6 @@ void LeoIpv4::initialize(int stage)
     Ipv4::initialize(stage);
     if (stage == INITSTAGE_LOCAL) {
         configurator = dynamic_cast<LeoIpv4NetworkConfigurator *>(getParentModule()->getParentModule()->getParentModule()->getSubmodule("configurator"));
-        WATCH_MAP(nextHops);
-        WATCH_MAP(nextHopsStr);
-
     }
 }
 
@@ -47,7 +46,14 @@ void LeoIpv4::setNodeId(int id)
 }
 void LeoIpv4::addKNextHop(int k, int destNode, int nextInterfaceID)
 {
-    kNextHops[k][destNode] = nextInterfaceID;
+    if (k == 1) {
+        if (destNode >= static_cast<int>(primaryNextHopInterfaces.size()))
+            primaryNextHopInterfaces.resize(destNode + 1, 0);
+        primaryNextHopInterfaces[destNode] = nextInterfaceID;
+    }
+    else {
+        kNextHops[k][destNode] = nextInterfaceID;
+    }
 }
 
 void LeoIpv4::addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID)
@@ -55,15 +61,10 @@ void LeoIpv4::addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID)
     nextHops[destinationAddr] = nextInterfaceID;
 }
 
-void LeoIpv4::addNextHopStr(std::string destinationAddr, std::string nextInterfaceID)
-{
-    nextHopsStr[destinationAddr] = nextInterfaceID;
-}
-
 void LeoIpv4::clearNextHops(){
-    kNextHops.clear();
-    nextHopsStr.clear();
     nextHops.clear();
+    kNextHops.clear();
+    std::fill(primaryNextHopInterfaces.begin(), primaryNextHopInterfaces.end(), 0);
 }
 
 void LeoIpv4::routeUnicastPacket(Packet *packet)
@@ -81,7 +82,8 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
     //std::cout << "Routing " << packet << " with destination = " << destAddr << ", ";
     // if output port was explicitly requested, use that, otherwise use Ipv4 routing
     //if (destIE) {
-        EV_DETAIL << "using manually specified output interface " << destIE->getInterfaceName() << "\n";
+        if (destIE != nullptr)
+            EV_DETAIL << "using manually specified output interface " << destIE->getInterfaceName() << "\n";
         // and nextHopAddr remains unspecified
         //if (!nextHopAddress.isUnspecified()) {
             // do nothing, next hop address already specified
@@ -100,46 +102,27 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
         // use Ipv4 routing (lookup in routing table)
     int modId = configurator->getModuleIdFromIpAddress(destAddr.getInt()); //TODO check if IP address is end point, if is, get ground station IP
 
-    int interfaceID = kNextHops[1][modId];
+    const int currentNodeType = configurator->getNodeTypeCode(nodeId);
+    const int destinationNodeType = configurator->getNodeTypeCode(modId);
+    int interfaceID = (modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[modId] : 0;
 
-    // No Interface ID = no hop in k next hops, usually due to destination being an endpoint
-    // Node Type == 2 means destination is a end point
-    // !modID means mod id not found, edge case
-    if(!interfaceID || configurator->getNodeTypeCode(modId) == 2 || !modId){
-        int gsModId = configurator->getGroundStationFromEndPoint(modId);
-        interfaceID = kNextHops[1][gsModId];
-
-        //If current node is a ground station, and has end point attached, then interfaceID = interfaceID + 1
-        int totalEndpoints = configurator->getTotalEndpoints(nodeId);
-        if(interfaceID > 0 && totalEndpoints > 0){
-            interfaceID = interfaceID + totalEndpoints;
+    if (destinationNodeType == 2 && modId >= 0) {
+        const int attachedNodeId = configurator->getGroundStationFromEndPoint(modId);
+        if (nodeId == attachedNodeId) {
+            interfaceID = configurator->getEndpointAttachmentInterfaceId(modId);
         }
-
-//        if(interfaceID == 108){
-//            std::cout << "\nFOUND 108 INTERFACE" << endl;
-//            std::cout << "\n NODE ID: " << nodeId << endl;
-//            std::cout << "\n configurator->hasConnectedEndpoint(nodeId)" << configurator->hasConnectedEndpoint(nodeId) << endl;
-//            //Update check as hasConnectedEndpoint is wrong here
-//        }
-
-//        if(configurator->getNodeTypeCode(nodeId) == 1){
-//            interfaceID = interfaceID - 1;
-//        }
-        if(interfaceID <= 0){
-            if(totalEndpoints > 0){
-                interfaceID = 100 + configurator->getEndpointId(modId);
-                //std::cout << "\n Destination Node: " << modId << endl;
-                //std::cout << "\n Current Node: " << nodeId << endl;
-                //std::cout << "\n Interface ID: " << interfaceID << endl;
-            }
-            else{
-                //Must be routing from user terminal, send to first ppp link
-                interfaceID = 101;
-            }
+        else if (currentNodeType == 2) {
+            interfaceID = configurator->getEndpointUplinkInterfaceId(nodeId);
+        }
+        else {
+            interfaceID = (attachedNodeId >= 0 && attachedNodeId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[attachedNodeId] : 0;
         }
     }
+    else if (interfaceID <= 0 && currentNodeType == 2) {
+        interfaceID = configurator->getEndpointUplinkInterfaceId(nodeId);
+    }
 
-    if (interfaceID) {
+    if (interfaceID > 0) {
         packet->addTagIfAbsent<InterfaceReq>()->setInterfaceId(interfaceID);
         hopFound = true;
     }
@@ -173,5 +156,6 @@ void LeoIpv4::stop()
 {
     Ipv4::stop();
     nextHops.clear();
+    std::fill(primaryNextHopInterfaces.begin(), primaryNextHopInterfaces.end(), 0);
 }
 }

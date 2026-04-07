@@ -14,7 +14,10 @@
 // 
 
 #include <fstream> //check if needed
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <inet/common/INETUtils.h>
 #include <inet/common/XMLUtils.h>
 #include <inet/common/ModuleAccess.h>
@@ -27,17 +30,38 @@ using namespace std;
 namespace inet {
 Define_Module(LeoChannelConstructor);
 
+static bool isEndUserTypeName(const std::string& typeName)
+{
+    return typeName == "leosatellites.base.EndUser";
+}
+
+static bool isUserTerminalTypeName(const std::string& typeName)
+{
+    return typeName == "leosatellites.base.UserTerminal";
+}
+
 LeoChannelConstructor::~LeoChannelConstructor() {
     cancelAndDelete(startManagerNode);
     cancelAndDelete(updateTimer);
+    cancelAndDelete(userTerminalHandoverTimer);
 }
 
 LeoChannelConstructor::LeoChannelConstructor(){
+    numOfSats = 0;
+    numOfGS = 0;
     numOfPlanes = 0;
+    numOfClients = 0;
+    numOfUserTerminals = 0;
     satPerPlane = 0;
     startManagerNode = nullptr;
     updateTimer = nullptr;
+    userTerminalHandoverTimer = nullptr;
     updateInterval = 0;
+    userTerminalUpdateInterval = 0;
+    userTerminalSampleInterval = 0;
+    userTerminalHandoverDowntime = 0;
+    nextUserTerminalUpdate = 0;
+    linkDataRate = 0;
 }
 
 void LeoChannelConstructor::initialize(int stage)
@@ -52,6 +76,7 @@ void LeoChannelConstructor::initialize(int stage)
         // Create timer messages
         startManagerNode = new cMessage("startManagerNode");
         updateTimer = new cMessage("update");
+        userTerminalHandoverTimer = new cMessage("userTerminalHandover");
 
         // Get reference to the parent module
         cModule *parent = getParentModule();
@@ -61,6 +86,7 @@ void LeoChannelConstructor::initialize(int stage)
         numOfSats = parent->par("numOfSats");
         numOfGS = parent->par("numOfGS");
         numOfClients = parent->par("numOfClients");
+        numOfUserTerminals = parent->par("numOfUserTerminals");
         satPerPlane = parent->par("satsPerPlane");
         enableInterSatelliteLinks = parent->par("enableInterSatelliteLinks").boolValue();
 
@@ -73,12 +99,17 @@ void LeoChannelConstructor::initialize(int stage)
         // Initialize update and interval counters
         updateInterval = 0;
         currentInterval = 0;
+        userTerminalUpdateInterval = par("userTerminalUpdateInterval");
+        userTerminalSampleInterval = par("userTerminalSampleInterval");
+        userTerminalHandoverDowntime = par("userTerminalHandoverDowntime");
+        nextUserTerminalUpdate = 0;
 
         // Get general network configuration
         networkName = parent->getName();
-        linkDataRate = par("dataRate").str();
+        linkDataRate = par("dataRate").doubleValue();
         queueSize = par("queueSize");
         interfaceType = par("interfaceType").stringValue();
+        cacheNetworkModules();
 
         // Start manager node at simulation time 0
         scheduleAt(0, startManagerNode);
@@ -90,7 +121,10 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
 {
     if(msg == updateTimer){
         setUpGSLinks();
+        const bool userTerminalLinksChanged = refreshUserTerminalLinks(false);
         addPPPInterfaces();
+        if (userTerminalLinksChanged)
+            finalizeUserTerminalLinks();
         //setUpInterfaces();
         updateChannels();
         configurator->updateForwardingStates(simTime());
@@ -101,9 +135,17 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
         //configurator->configure();
         scheduleUpdate(false);
     }
+    else if (msg == userTerminalHandoverTimer) {
+        const bool userTerminalLinksChanged = refreshUserTerminalLinks(false);
+        addPPPInterfaces();
+        if (userTerminalLinksChanged)
+            finalizeUserTerminalLinks();
+        updateChannels();
+    }
     else if(msg == startManagerNode){
         setUpSimulation();
         setUpGSLinks();
+        refreshUserTerminalLinks(true);
 
         setUpInterfaces();
         updateChannels();
@@ -127,6 +169,47 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
     }
 }
 
+void LeoChannelConstructor::cacheNetworkModules()
+{
+    satelliteModules.resize(numOfSats);
+    satelliteMobilities.resize(numOfSats);
+    satelliteNoradModules.resize(numOfSats);
+    for (int satNum = 0; satNum < numOfSats; satNum++) {
+        std::string satName = networkName + ".satellite[" + std::to_string(satNum) + "]";
+        cModule *satModule = getModuleByPath(satName.c_str());
+        satelliteModules[satNum] = satModule;
+        satelliteMobilities[satNum] = satModule ? check_and_cast<SatelliteMobility *>(satModule->getSubmodule("mobility")) : nullptr;
+        satelliteNoradModules[satNum] = satModule ? check_and_cast<INorad *>(satModule->getSubmodule("NoradModule")) : nullptr;
+    }
+
+    groundStationModules.resize(numOfGS);
+    groundStationMobilities.resize(numOfGS);
+    for (int gsNum = 0; gsNum < numOfGS; gsNum++) {
+        std::string gsName = networkName + ".groundStation[" + std::to_string(gsNum) + "]";
+        cModule *gsModule = getModuleByPath(gsName.c_str());
+        groundStationModules[gsNum] = gsModule;
+        groundStationMobilities[gsNum] = gsModule ? check_and_cast<GroundStationMobility *>(gsModule->getSubmodule("mobility")) : nullptr;
+    }
+
+    clientModules.resize(numOfClients);
+    serverModules.resize(numOfClients);
+    for (int clientNum = 0; clientNum < numOfClients; clientNum++) {
+        std::string clientName = networkName + ".client[" + std::to_string(clientNum) + "]";
+        std::string serverName = networkName + ".server[" + std::to_string(clientNum) + "]";
+        clientModules[clientNum] = getModuleByPath(clientName.c_str());
+        serverModules[clientNum] = getModuleByPath(serverName.c_str());
+    }
+
+    userTerminalModules.resize(numOfUserTerminals);
+    userTerminalMobilities.resize(numOfUserTerminals);
+    for (int userTerminalNum = 0; userTerminalNum < numOfUserTerminals; userTerminalNum++) {
+        std::string userTerminalName = networkName + ".userTerminal[" + std::to_string(userTerminalNum) + "]";
+        cModule *userTerminalModule = getModuleByPath(userTerminalName.c_str());
+        userTerminalModules[userTerminalNum] = userTerminalModule;
+        userTerminalMobilities[userTerminalNum] = userTerminalModule ? check_and_cast<GroundStationMobility *>(userTerminalModule->getSubmodule("mobility")) : nullptr;
+    }
+}
+
 void LeoChannelConstructor::scheduleUpdate(bool simStart)
 {
     cancelEvent(updateTimer);
@@ -142,41 +225,35 @@ void LeoChannelConstructor::scheduleUpdate(bool simStart)
 
 void LeoChannelConstructor::setUpSimulation()
 {
-    //Create Client links
-    cGate *inGateClient;
-    cGate *outGateClient;
-    cGate *inGateGs;
-    cGate *outGateGs;
-    std::vector<std::string> endUserTypes = {"client", "server"};
-    for (const auto& type : endUserTypes) {
-        for (int clientNum = 0; clientNum < numOfClients; clientNum++) {
-            std::string moduleName = networkName + "." + type + "[" + std::to_string(clientNum) + "]";
-            cModule *module = getModuleByPath(moduleName.c_str());
+    const std::vector<cModule *> endUsers = [&]() {
+        std::vector<cModule *> modules;
+        modules.reserve(clientModules.size() + serverModules.size());
+        modules.insert(modules.end(), clientModules.begin(), clientModules.end());
+        modules.insert(modules.end(), serverModules.begin(), serverModules.end());
+        return modules;
+    }();
 
-            std::string connectName = module->par("connectModule");
-            std::string destFullName = networkName + "." + connectName;
-            cModule *destMod = getModuleByPath(destFullName.c_str());
+    for (cModule *module : endUsers) {
+        if (!module)
+            continue;
+        std::string connectName = module->par("connectModule");
+        std::string destFullName = networkName + "." + connectName;
+        cModule *destMod = getModuleByPath(destFullName.c_str());
 
-            std::pair<cGate*, cGate*> gatePair1 = getNextFreeGate(module);
-            std::pair<cGate*, cGate*> gatePair2 = getNextFreeGate(destMod);
+        std::pair<cGate*, cGate*> gatePair1 = getNextFreeGate(module);
+        std::pair<cGate*, cGate*> gatePair2 = getNextFreeGate(destMod);
 
-            cGate* inGate = gatePair1.first;
-            cGate* outGate = gatePair1.second;
-            cGate* inGateDest = gatePair2.first;
-            cGate* outGateDest = gatePair2.second;
+        cGate* inGate = gatePair1.first;
+        cGate* outGate = gatePair1.second;
+        cGate* inGateDest = gatePair2.first;
+        cGate* outGateDest = gatePair2.second;
 
-            std::string dString = "0ms";
-            createChannel(dString, outGate, inGateDest, true);
-            createChannel(dString, outGateDest, inGate, true);
-        }
+        createChannel(0, outGate, inGateDest, true);
+        createChannel(0, outGateDest, inGate, true);
     }
 
-    for(int satNum = 0; satNum < numOfSats; satNum++){
-        std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
-        cModule *satMod = getModuleByPath(satName.c_str());
-        if(satNum == 0){
-            updateInterval = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->par("updateInterval").doubleValue();
-        }
+    if (!satelliteMobilities.empty() && satelliteMobilities.front() != nullptr) {
+        updateInterval = satelliteMobilities.front()->par("updateInterval").doubleValue();
     }
 
     if(!enableInterSatelliteLinks){
@@ -189,8 +266,8 @@ void LeoChannelConstructor::setUpSimulation()
             numOfSatsInPlane = numOfSats;
         }
         for(unsigned int satNum = planeNum*satPerPlane; satNum < numOfSatsInPlane; satNum++){
-            std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
-            cModule *satMod = getModuleByPath(satName.c_str()); // get source satellite module
+            cModule *satMod = satelliteModules[satNum];
+            SatelliteMobility *sourceSatMobility = satelliteMobilities[satNum];
 
             cGate *inGateSat1;
             cGate *outGateSat1;
@@ -202,8 +279,7 @@ void LeoChannelConstructor::setUpSimulation()
             }
 
             if(destSatNumA < numOfSats){
-                std::string destSatNameA = std::string(networkName + ".satellite[" + std::to_string(destSatNumA) + "]");  //+1 within same orbital plane ISL
-                cModule *destModA = getModuleByPath(destSatNameA.c_str());
+                cModule *destModA = satelliteModules[destSatNumA];
                 std::pair <cGate*, cGate*> gatePair1 = getNextFreeGate(satMod);
                 std::pair <cGate*, cGate*> gatePair2 = getNextFreeGate(destModA);
 
@@ -212,19 +288,19 @@ void LeoChannelConstructor::setUpSimulation()
                 inGateSat2 = gatePair2.first;
                 outGateSat2 = gatePair2.second;
 
-                //cChannel *channel = channelType->create("channel");
-                SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModA->getSubmodule("mobility"));
-                double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
-                std::string dString = std::to_string((distance/299792458)*1000) + "ms";
-
-                createChannel(dString, outGateSat1, inGateSat2, false);
-                createChannel(dString, outGateSat2, inGateSat1, false);
+                SatelliteMobility* destSatMobility = satelliteMobilities[destSatNumA];
+                double delaySeconds = (sourceSatMobility->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude()) * 1000.0) / 299792458.0;
+                createChannel(delaySeconds, outGateSat1, inGateSat2, false);
+                createChannel(delaySeconds, outGateSat2, inGateSat1, false);
+                fixedTimedLinks.push_back({sourceSatMobility, destSatMobility, nullptr,
+                                           check_and_cast<cDatarateChannel *>(outGateSat1->getChannel()),
+                                           check_and_cast<cDatarateChannel *>(outGateSat2->getChannel()),
+                                           static_cast<int>(satNum), -1, false});
             }
 
             int destSatNumB = (satNum + satPerPlane);// % totalSats;
             if(destSatNumB < numOfSats){
-                std::string destSatNameB = std::string(networkName + ".satellite[" + std::to_string(destSatNumB) + "]"); //+1 adjacent orbital plane ISL
-                cModule *destModB = getModuleByPath(destSatNameB.c_str());
+                cModule *destModB = satelliteModules[destSatNumB];
                 std::pair <cGate*, cGate*> gatePair1 = getNextFreeGate(satMod);
                 std::pair <cGate*, cGate*> gatePair2 = getNextFreeGate(destModB);
 
@@ -233,11 +309,14 @@ void LeoChannelConstructor::setUpSimulation()
                 inGateSat2 = gatePair2.first;
                 outGateSat2 = gatePair2.second;
 
-                SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModB->getSubmodule("mobility"));
-                double distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
-                std::string dString = std::to_string((distance/299792458)*1000) + "ms";
-                createChannel(dString, outGateSat1, inGateSat2, false);
-                createChannel(dString, outGateSat2, inGateSat1, false);
+                SatelliteMobility* destSatMobility = satelliteMobilities[destSatNumB];
+                double delaySeconds = (sourceSatMobility->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude()) * 1000.0) / 299792458.0;
+                createChannel(delaySeconds, outGateSat1, inGateSat2, false);
+                createChannel(delaySeconds, outGateSat2, inGateSat1, false);
+                fixedTimedLinks.push_back({sourceSatMobility, destSatMobility, nullptr,
+                                           check_and_cast<cDatarateChannel *>(outGateSat1->getChannel()),
+                                           check_and_cast<cDatarateChannel *>(outGateSat2->getChannel()),
+                                           static_cast<int>(satNum), -1, false});
             }
         }
     }
@@ -246,14 +325,12 @@ void LeoChannelConstructor::setUpSimulation()
 void LeoChannelConstructor::setUpClientServerInterfaces()
 {
     for(int clientNum = 0; clientNum < numOfClients; clientNum++){
-        std::string clientName = std::string(networkName + ".client[" + std::to_string(clientNum) + "]");
-        cModule *clientMod = getModuleByPath(clientName.c_str());
+        cModule *clientMod = clientModules[clientNum];
         NetworkInterface* clientInterface = dynamic_cast<NetworkInterface*>(clientMod->getSubmodule("ppp", 0));
         setUpIpLayer(clientMod, clientInterface);
         dynamic_cast<LeoIpv4RoutingTable*>(clientMod->getModuleByPath(".ipv4.routingTable"))->configureRouterId();
 
-        std::string serverName = std::string(networkName + ".server[" + std::to_string(clientNum) + "]");
-        cModule *serverMod = getModuleByPath(serverName.c_str());
+        cModule *serverMod = serverModules[clientNum];
         NetworkInterface* serverInterface = dynamic_cast<NetworkInterface*>(serverMod->getSubmodule("ppp", 0));
         setUpIpLayer(serverMod, serverInterface);
         dynamic_cast<LeoIpv4RoutingTable*>(serverMod->getModuleByPath(".ipv4.routingTable"))->configureRouterId();
@@ -262,46 +339,47 @@ void LeoChannelConstructor::setUpClientServerInterfaces()
 
 void LeoChannelConstructor::setUpInterfaces()
 {
-    std::vector<std::string> nodeTypes = {"client", "server"};
+    for (cModule *mod : clientModules) {
+        updatePPPModules(mod, false);
+        auto* routingTable = dynamic_cast<LeoIpv4RoutingTable*>(mod->getModuleByPath(".ipv4.routingTable"));
+        if (routingTable)
+            routingTable->configureRouterId();
+    }
 
-    for (const auto& type : nodeTypes) {
-        for (int clientNum = 0; clientNum < numOfClients; clientNum++) {
-            std::string moduleName = networkName + "." + type + "[" + std::to_string(clientNum) + "]";
-            cModule *mod = getModuleByPath(moduleName.c_str());
-            updatePPPModules(mod, false);
-            auto* routingTable = dynamic_cast<LeoIpv4RoutingTable*>(mod->getModuleByPath(".ipv4.routingTable"));
-            if (routingTable)
-                routingTable->configureRouterId();
-        }
+    for (cModule *mod : serverModules) {
+        updatePPPModules(mod, false);
+        auto* routingTable = dynamic_cast<LeoIpv4RoutingTable*>(mod->getModuleByPath(".ipv4.routingTable"));
+        if (routingTable)
+            routingTable->configureRouterId();
+    }
+
+    for (cModule *mod : userTerminalModules) {
+        updatePPPModules(mod, false);
+        auto *routingTable = dynamic_cast<LeoIpv4RoutingTable*>(mod->getModuleByPath(".ipv4.routingTable"));
+        if (routingTable)
+            routingTable->configureRouterId();
     }
 
     for(int satNum = 0; satNum < numOfSats; satNum++){
-        std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
-        cModule *satMod = getModuleByPath(satName.c_str());
+        cModule *satMod = satelliteModules[satNum];
         updatePPPModules(satMod, true);
         dynamic_cast<LeoIpv4RoutingTable*>(satMod->getModuleByPath(".ipv4.routingTable"))->configureRouterId();
     }
 
     for(int gsNum = 0; gsNum < numOfGS; gsNum++){
-        std::string gsName = std::string(networkName + ".groundStation[" + std::to_string(gsNum) + "]");
-        cModule *gsMod = getModuleByPath(gsName.c_str());
+        cModule *gsMod = groundStationModules[gsNum];
         updatePPPModules(gsMod, true);
         dynamic_cast<LeoIpv4RoutingTable*>(gsMod->getModuleByPath(".ipv4.routingTable"))->configureRouterId();
     }
 }
 
 void LeoChannelConstructor::addPPPInterfaces(){
-    for(int satNum = 0; satNum < numOfSats; satNum++){
-        std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
-        cModule *satMod = getModuleByPath(satName.c_str());
-        updatePPPModules(satMod, true);
-    }
+    if (dirtyPppModules.empty())
+        return;
 
-    for(int gsNum = 0; gsNum < numOfGS; gsNum++){
-        std::string gsName = std::string(networkName + ".groundStation[" + std::to_string(gsNum) + "]");
-        cModule *gsMod = getModuleByPath(gsName.c_str());
-        updatePPPModules(gsMod, true);
-    }
+    for (cModule *mod : dirtyPppModules)
+        updatePPPModules(mod, true);
+    dirtyPppModules.clear();
 }
 
 std::pair<cGate*,cGate*> LeoChannelConstructor::getNextFreeGate(cModule *mod)
@@ -327,45 +405,19 @@ std::pair<cGate*,cGate*> LeoChannelConstructor::getNextFreeGate(cModule *mod)
 
 void LeoChannelConstructor::updateChannels()
 {
-    for(int satNum = 0; satNum < numOfSats; satNum++){
-        std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
-        cModule *satMod = getModuleByPath(satName.c_str());
-        for(int i = 0; i < satMod->gateSize("pppg$o"); i++){  //check each possible pppg gate
-            cGate* srcGate = satMod->gate("pppg$o", i);
-            cGate* srcGate2 = satMod->gate("pppg$i", i);
-            if(srcGate->isConnected()){
-                cChannel *chan = srcGate->getChannel();
-                cChannel *chan2 = srcGate2->getIncomingTransmissionChannel();
-                cModule* destModule = srcGate->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
-                std::string mobilityName = destModule->getSubmodule("mobility")->getNedTypeName();
-                //std::string mobilityName = destModule->getModuleByPath("mobility")->getNedTypeName();
-                double distance = 0;
-                if(mobilityName == "leosatellites.mobility.SatelliteMobility"){ //Satellite to Satellite Channel
-                    SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModule->getSubmodule("mobility"));
-                    distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destSatMobility->getLatitude(), destSatMobility->getLongitude(), destSatMobility->getAltitude())*1000;
-                    distance = (distance/299792458)*1000; //ms
-                }
-                else if (mobilityName == "leosatellites.mobility.GroundStationMobility"){ // Satellite to Ground Station Channel
-                    GroundStationMobility* destGSMobility = dynamic_cast<GroundStationMobility*>(destModule->getSubmodule("mobility"));
-                    distance = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"))->getDistance(destGSMobility->getLUTPositionY(), destGSMobility->getLUTPositionX(), 0)*1000;
-                    distance = (distance/299792458)*1000; //ms
-                    configurator->addGSLinktoTopologyGraph(configurator->getNodeModuleGraphId(destModule->getFullName()), satNum, distance); //TODO FIX
-                }
-                else{
-                    throw cRuntimeError("Unsupported mobility used by module");
-                }
-
-                std::string dString = std::to_string(distance) + "ms";
-
-                cPar& param = chan->par("delay");
-                param.parse(dString.c_str());
-                chan->par("datarate").parse(linkDataRate.c_str());
-
-                cPar& param2 = chan2->par("delay");
-                param2.parse(dString.c_str());
-                chan2->par("datarate").parse(linkDataRate.c_str());
-            }
-        }
+    configurator->clearGroundStationLinks();
+    for (const auto& linkRecord : fixedTimedLinks)
+        updateTimedLink(linkRecord);
+    for (const auto& [key, activeLink] : activeGroundStationLinks)
+        updateTimedLink(activeLink.linkRecord);
+    for (const auto& [userTerminalIndex, activeLink] : activeUserTerminalLinks) {
+        double delaySeconds = (activeLink.satelliteMobility->getDistance(activeLink.userTerminalMobility->getLUTPositionY(),
+                                                                        activeLink.userTerminalMobility->getLUTPositionX(),
+                                                                        0) * 1000.0) / 299792458.0;
+        activeLink.forwardChannel->setDelay(delaySeconds);
+        activeLink.forwardChannel->setDatarate(linkDataRate);
+        activeLink.reverseChannel->setDelay(delaySeconds);
+        activeLink.reverseChannel->setDatarate(linkDataRate);
     }
 }
 
@@ -373,153 +425,364 @@ void LeoChannelConstructor::setUpGSLinks()
 {
     //Sets up new GS links if new satellite is reachable.
     for(int gsNum = 0; gsNum < numOfGS; gsNum++){
-        std::string gsName = std::string(networkName + ".groundStation[" + std::to_string(gsNum) + "]");
-        cModule *gsMod = getModuleByPath(gsName.c_str());
-        GroundStationMobility* gsMobility = dynamic_cast<GroundStationMobility*>(gsMod->getSubmodule("mobility"));
+        GroundStationMobility* gsMobility = groundStationMobilities[gsNum];
         for(int satNum = 0; satNum < numOfSats; satNum++){
-            std::string satName = std::string(networkName + ".satellite[" + std::to_string(satNum) + "]");
-            cModule *satMod = getModuleByPath(satName.c_str());
-            SatelliteMobility* satMobility = dynamic_cast<SatelliteMobility*>(satMod->getSubmodule("mobility"));
-            if(satMobility->isReachable(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)){
-                int gsGateSize = gsMod->gateSize("pppg");
-                if(gsGateSize > 0){
-                    bool linkExists = false;
-                    for(int i = 0; i < gsGateSize; i++){
-                        if((gsMod->gate("pppg$o", i)->getPathEndGate()->getOwnerModule()->getOwner()->getOwner() == satMod)){
-                            //link already exists - do not do anything
-                            linkExists = true;
-                            goto setup;
-                        }
-                    }
-                    setup:
-                        if(!linkExists){
-                            cGate *inGateSat;
-                            cGate *outGateSat;
-                            cGate *inGateGS;
-                            cGate *outGateGS;
-                            std::pair <cGate*, cGate*> gatePair1 = getNextFreeGate(satMod);
-                            std::pair <cGate*, cGate*> gatePair2 = getNextFreeGate(gsMod);
-                            inGateSat = gatePair1.first;
-                            outGateSat = gatePair1.second;
-                            inGateGS = gatePair2.first;
-                            outGateGS = gatePair2.second;
-                            cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                            cChannel *channel = channelType->create("channel");
-                            cChannel *channel2 = channelType->create("channel");
-                            outGateSat->connectTo(inGateGS, channel);
-                            outGateGS->connectTo(inGateSat, channel2);
-                            IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
-                            NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
-                            if(ie){
-                                processLifecycleCommand(ie, "Start");
-                                configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
-                                configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
-                            }
+            SatelliteMobility* satMobility = satelliteMobilities[satNum];
+            const uint64_t linkKey = getGroundStationLinkKey(gsNum, satNum);
+            const bool reachable = satMobility->isReachable(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0);
+            auto activeIt = activeGroundStationLinks.find(linkKey);
 
-                            IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
-                            NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
-                            if(die){
-                                processLifecycleCommand(die, "Start");
-                                configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
-                                configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
-                            }
-                        }
-                }
-                else{
-                    cGate *inGateSat;
-                    cGate *outGateSat;
-                    cGate *inGateGS;
-                    cGate *outGateGS;
-                    std::pair <cGate*, cGate*> gatePair1 = getNextFreeGate(satMod);
-                    std::pair <cGate*, cGate*> gatePair2 = getNextFreeGate(gsMod);
-                    inGateSat = gatePair1.first;
-                    outGateSat = gatePair1.second;
-                    inGateGS = gatePair2.first;
-                    outGateGS = gatePair2.second;
-                    //cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                    //double distance = satMobility->getDistance(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0)*1000;
-                    //std::string dString = std::to_string((distance/299792458)*1000) + "ms";
-
-                    cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-                    cChannel *channel = channelType->create("channel");
-                    cChannel *channel2 = channelType->create("channel");
-                    outGateSat->connectTo(inGateGS, channel);
-                    outGateGS->connectTo(inGateSat, channel2);
-                    IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
-                    NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId());
-                    if(ie){
-                        processLifecycleCommand(ie, "Start");
-                        configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
-                        configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
-                    }
-
-                    IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
-                    NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGS->getId());
-                    if(die){
-                        processLifecycleCommand(die, "Start");
-                        configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
-                        configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
-                    }
-                }
+            if (reachable) {
+                if (activeIt == activeGroundStationLinks.end())
+                    createGroundStationLink(gsNum, satNum);
             }
-            else{ //remove link is exists
-                int gsGateSize = gsMod->gateSize("pppg");
-                if(gsGateSize > 0){
-                    for(int i = 0; i < gsGateSize; i++){
-                        cGate* endGate = gsMod->gate("pppg$o", i)->getPathEndGate();
-                        if((endGate->getOwnerModule()->getOwner()->getOwner() == satMod)){
-                            //IInterfaceTable* sourceIft = dynamic_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
-                            //NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(gsMod->gate("pppg$o", i)->getId());
-
-                            //IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
-                            //NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(endGate->getId());
-
-                           // configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
-                            configurator->removeNextHopInterface(gsMod, satMod);//, die->getInterfaceId());
-                            gsMod->gate("pppg$o", i)->disconnect();
-
-                            NetworkInterface* ie = dynamic_cast<NetworkInterface*>(gsMod->getSubmodule("ppp", i));
-                            processLifecycleCommand(ie, "Crash");
-                        }
-                    }
-                }
-                int satGateSize = satMod->gateSize("pppg");
-                if(satGateSize > 0){
-                    for(int i = 0; i < satGateSize; i++){
-                        cGate* endGate = satMod->gate("pppg$o", i)->getPathEndGate();
-                        if((endGate->getOwnerModule()->getOwner()->getOwner() == gsMod)){
-                            configurator->removeNextHopInterface(satMod, gsMod);
-                            satMod->gate("pppg$o", i)->disconnect();
-
-                            NetworkInterface* ie = dynamic_cast<NetworkInterface*>(satMod->getSubmodule("ppp", i));
-                            processLifecycleCommand(ie, "Crash");
-                        }
-                    }
-                }
+            else if (activeIt != activeGroundStationLinks.end()) {
+                removeGroundStationLink(gsNum, satNum, activeIt->second);
+                activeGroundStationLinks.erase(activeIt);
             }
         }
     }
 }
 
+bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
+{
+    if (userTerminalModules.empty()) {
+        cancelEvent(userTerminalHandoverTimer);
+        pendingUserTerminalHandovers.clear();
+        return false;
+    }
+
+    bool linksChanged = false;
+
+    if (forceUpdate) {
+        pendingUserTerminalHandovers.clear();
+        nextUserTerminalUpdate = userTerminalUpdateInterval > SIMTIME_ZERO ? simTime() + userTerminalUpdateInterval : SIMTIME_ZERO;
+        for (int userTerminalIndex = 0; userTerminalIndex < numOfUserTerminals; userTerminalIndex++) {
+            const int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
+            auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
+            if (activeLinkIt != activeUserTerminalLinks.end()) {
+                removeUserTerminalLink(userTerminalIndex, activeLinkIt->second);
+                activeUserTerminalLinks.erase(activeLinkIt);
+            }
+
+            if (selectedSatellite >= 0) {
+                createUserTerminalLink(userTerminalIndex, selectedSatellite);
+                linksChanged = true;
+            }
+        }
+        scheduleUserTerminalHandoverTimer();
+        return linksChanged;
+    }
+
+    if (userTerminalUpdateInterval > SIMTIME_ZERO && simTime() >= nextUserTerminalUpdate) {
+        for (int userTerminalIndex = 0; userTerminalIndex < numOfUserTerminals; userTerminalIndex++) {
+            const int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
+            auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
+            if (activeLinkIt != activeUserTerminalLinks.end()) {
+                removeUserTerminalLink(userTerminalIndex, activeLinkIt->second);
+                activeUserTerminalLinks.erase(activeLinkIt);
+            }
+
+            if (selectedSatellite >= 0) {
+                PendingUserTerminalHandover pendingHandover;
+                pendingHandover.userTerminalIndex = userTerminalIndex;
+                pendingHandover.targetSatelliteIndex = selectedSatellite;
+                pendingHandover.reconnectTime = simTime() + userTerminalHandoverDowntime;
+                pendingUserTerminalHandovers[userTerminalIndex] = pendingHandover;
+            }
+            else {
+                pendingUserTerminalHandovers.erase(userTerminalIndex);
+            }
+        }
+
+        while (nextUserTerminalUpdate <= simTime())
+            nextUserTerminalUpdate += userTerminalUpdateInterval;
+    }
+
+    linksChanged = completePendingUserTerminalHandovers() || linksChanged;
+    scheduleUserTerminalHandoverTimer();
+
+    return linksChanged;
+}
+
+bool LeoChannelConstructor::completePendingUserTerminalHandovers()
+{
+    bool linksChanged = false;
+    std::vector<int> completedUserTerminals;
+
+    for (const auto& [userTerminalIndex, pendingHandover] : pendingUserTerminalHandovers) {
+        if (pendingHandover.reconnectTime > simTime())
+            continue;
+
+        if (pendingHandover.targetSatelliteIndex >= 0) {
+            createUserTerminalLink(userTerminalIndex, pendingHandover.targetSatelliteIndex);
+            linksChanged = true;
+        }
+        completedUserTerminals.push_back(userTerminalIndex);
+    }
+
+    for (int userTerminalIndex : completedUserTerminals)
+        pendingUserTerminalHandovers.erase(userTerminalIndex);
+
+    return linksChanged;
+}
+
+void LeoChannelConstructor::scheduleUserTerminalHandoverTimer()
+{
+    cancelEvent(userTerminalHandoverTimer);
+
+    simtime_t nextReconnectTime = SIMTIME_ZERO;
+    bool foundPendingReconnect = false;
+    for (const auto& [userTerminalIndex, pendingHandover] : pendingUserTerminalHandovers) {
+        if (!foundPendingReconnect || pendingHandover.reconnectTime < nextReconnectTime) {
+            nextReconnectTime = pendingHandover.reconnectTime;
+            foundPendingReconnect = true;
+        }
+    }
+
+    if (foundPendingReconnect)
+        scheduleAt(nextReconnectTime, userTerminalHandoverTimer);
+}
+
+int LeoChannelConstructor::selectServingSatelliteForUserTerminal(int userTerminalIndex)
+{
+    GroundStationMobility *userTerminalMobility = userTerminalMobilities[userTerminalIndex];
+    if (userTerminalMobility == nullptr)
+        return -1;
+
+    const simtime_t slotStart = simTime();
+    const simtime_t slotEnd = slotStart + userTerminalUpdateInterval;
+    const auto referenceTrajectory = buildReferenceTrajectory(userTerminalMobility, slotStart, slotEnd);
+
+    bool hasReferenceSample = false;
+    for (const auto& sample : referenceTrajectory) {
+        if (sample.reachable) {
+            hasReferenceSample = true;
+            break;
+        }
+    }
+    if (!hasReferenceSample)
+        return -1;
+
+    int bestSatellite = -1;
+    double bestScore = std::numeric_limits<double>::infinity();
+    double bestCurrentElevation = -std::numeric_limits<double>::infinity();
+    const double latitude = userTerminalMobility->getLUTPositionY();
+    const double longitude = userTerminalMobility->getLUTPositionX();
+
+    for (int satNum = 0; satNum < numOfSats; satNum++) {
+        INorad *noradModule = satelliteNoradModules[satNum];
+        if (noradModule == nullptr || !noradModule->isReachableAtTime(slotStart, latitude, longitude, 0))
+            continue;
+
+        const auto candidateTrajectory = buildCandidateTrajectory(satNum, userTerminalMobility, slotStart, slotEnd);
+        const double score = computeDtwDistance(referenceTrajectory, candidateTrajectory);
+        const double currentElevation = noradModule->getElevationAtTime(slotStart, latitude, longitude, 0);
+
+        if (score < bestScore || (score == bestScore && currentElevation > bestCurrentElevation)) {
+            bestScore = score;
+            bestCurrentElevation = currentElevation;
+            bestSatellite = satNum;
+        }
+    }
+
+    return bestSatellite;
+}
+
+std::vector<LeoChannelConstructor::TopocentricSample> LeoChannelConstructor::buildReferenceTrajectory(const GroundStationMobility *mobility, simtime_t slotStart, simtime_t slotEnd) const
+{
+    std::vector<TopocentricSample> trajectory;
+    if (mobility == nullptr)
+        return trajectory;
+
+    const double latitude = mobility->getLUTPositionY();
+    const double longitude = mobility->getLUTPositionX();
+    const simtime_t sampleStep = userTerminalSampleInterval > SIMTIME_ZERO ? userTerminalSampleInterval : userTerminalUpdateInterval;
+
+    for (simtime_t sampleTime = slotStart; sampleTime <= slotEnd; sampleTime += sampleStep) {
+        TopocentricSample bestSample;
+        bestSample.elevation = -std::numeric_limits<double>::infinity();
+
+        // We do not have an external "isolated trajectory" trace in the simulator,
+        // so the slot reference is the strongest overhead path seen across visible satellites.
+        for (int satNum = 0; satNum < numOfSats; satNum++) {
+            INorad *noradModule = satelliteNoradModules[satNum];
+            if (noradModule == nullptr || !noradModule->isReachableAtTime(sampleTime, latitude, longitude, 0))
+                continue;
+
+            const double elevation = noradModule->getElevationAtTime(sampleTime, latitude, longitude, 0);
+            if (!bestSample.reachable || elevation > bestSample.elevation) {
+                bestSample.reachable = true;
+                bestSample.elevation = elevation;
+                bestSample.azimuth = noradModule->getAzimuthAtTime(sampleTime, latitude, longitude, 0);
+            }
+        }
+
+        trajectory.push_back(bestSample);
+        if (sampleStep == SIMTIME_ZERO)
+            break;
+    }
+
+    return trajectory;
+}
+
+std::vector<LeoChannelConstructor::TopocentricSample> LeoChannelConstructor::buildCandidateTrajectory(int satNum, const GroundStationMobility *mobility, simtime_t slotStart, simtime_t slotEnd) const
+{
+    std::vector<TopocentricSample> trajectory;
+    if (mobility == nullptr || satNum < 0 || satNum >= numOfSats)
+        return trajectory;
+
+    INorad *noradModule = satelliteNoradModules[satNum];
+    if (noradModule == nullptr)
+        return trajectory;
+
+    const double latitude = mobility->getLUTPositionY();
+    const double longitude = mobility->getLUTPositionX();
+    const simtime_t sampleStep = userTerminalSampleInterval > SIMTIME_ZERO ? userTerminalSampleInterval : userTerminalUpdateInterval;
+
+    for (simtime_t sampleTime = slotStart; sampleTime <= slotEnd; sampleTime += sampleStep) {
+        TopocentricSample sample;
+        sample.reachable = noradModule->isReachableAtTime(sampleTime, latitude, longitude, 0);
+        if (sample.reachable) {
+            sample.elevation = noradModule->getElevationAtTime(sampleTime, latitude, longitude, 0);
+            sample.azimuth = noradModule->getAzimuthAtTime(sampleTime, latitude, longitude, 0);
+        }
+        trajectory.push_back(sample);
+        if (sampleStep == SIMTIME_ZERO)
+            break;
+    }
+
+    return trajectory;
+}
+
+double LeoChannelConstructor::computeDtwDistance(const std::vector<TopocentricSample>& referenceTrajectory, const std::vector<TopocentricSample>& candidateTrajectory) const
+{
+    const size_t referenceSize = referenceTrajectory.size();
+    const size_t candidateSize = candidateTrajectory.size();
+    if (referenceSize == 0 || candidateSize == 0)
+        return std::numeric_limits<double>::infinity();
+
+    constexpr double unreachablePenalty = 10000.0;
+    std::vector<std::vector<double>> dtw(referenceSize + 1, std::vector<double>(candidateSize + 1, std::numeric_limits<double>::infinity()));
+    dtw[0][0] = 0;
+
+    for (size_t i = 1; i <= referenceSize; i++) {
+        for (size_t j = 1; j <= candidateSize; j++) {
+            const TopocentricSample& referenceSample = referenceTrajectory[i - 1];
+            const TopocentricSample& candidateSample = candidateTrajectory[j - 1];
+
+            double localCost = 0;
+            if (referenceSample.reachable && candidateSample.reachable) {
+                const double azimuthDelta = std::fabs(referenceSample.azimuth - candidateSample.azimuth);
+                const double wrappedAzimuthDelta = std::min(azimuthDelta, 360.0 - azimuthDelta);
+                localCost = wrappedAzimuthDelta + std::fabs(referenceSample.elevation - candidateSample.elevation);
+            }
+            else if (referenceSample.reachable != candidateSample.reachable) {
+                localCost = unreachablePenalty;
+            }
+
+            dtw[i][j] = localCost + std::min({dtw[i - 1][j], dtw[i][j - 1], dtw[i - 1][j - 1]});
+        }
+    }
+
+    return dtw[referenceSize][candidateSize];
+}
+
+void LeoChannelConstructor::createUserTerminalLink(int userTerminalIndex, int satNum)
+{
+    cModule *satModule = satelliteModules[satNum];
+    cModule *userTerminalModule = userTerminalModules[userTerminalIndex];
+    if (satModule == nullptr || userTerminalModule == nullptr)
+        return;
+
+    auto satGatePair = getNextFreeGate(satModule);
+    auto userTerminalGatePair = getNextFreeGate(userTerminalModule);
+
+    cGate *inGateSat = satGatePair.first;
+    cGate *outGateSat = satGatePair.second;
+    cGate *inGateUserTerminal = userTerminalGatePair.first;
+    cGate *outGateUserTerminal = userTerminalGatePair.second;
+
+    createChannel(0, outGateSat, inGateUserTerminal, false);
+    createChannel(0, outGateUserTerminal, inGateSat, false);
+
+    ActiveUserTerminalLink activeLink;
+    activeLink.satelliteOutputGate = outGateSat;
+    activeLink.userTerminalOutputGate = outGateUserTerminal;
+    activeLink.satelliteMobility = satelliteMobilities[satNum];
+    activeLink.userTerminalMobility = userTerminalMobilities[userTerminalIndex];
+    activeLink.forwardChannel = check_and_cast<cDatarateChannel *>(outGateSat->getChannel());
+    activeLink.reverseChannel = check_and_cast<cDatarateChannel *>(outGateUserTerminal->getChannel());
+    activeLink.satelliteIndex = satNum;
+    activeLink.userTerminalIndex = userTerminalIndex;
+
+    dirtyPppModules.insert(satModule);
+    dirtyPppModules.insert(userTerminalModule);
+    activeUserTerminalLinks[userTerminalIndex] = activeLink;
+}
+
+void LeoChannelConstructor::removeUserTerminalLink(int userTerminalIndex, ActiveUserTerminalLink& link)
+{
+    cModule *satModule = satelliteModules[link.satelliteIndex];
+    cModule *userTerminalModule = userTerminalModules[userTerminalIndex];
+    if (satModule == nullptr || userTerminalModule == nullptr)
+        return;
+
+    const int satelliteGateIndex = link.satelliteOutputGate->getIndex();
+    const int userTerminalGateIndex = link.userTerminalOutputGate->getIndex();
+
+    link.userTerminalOutputGate->disconnect();
+    link.satelliteOutputGate->disconnect();
+
+    if (NetworkInterface *userTerminalInterface = dynamic_cast<NetworkInterface *>(userTerminalModule->getSubmodule("ppp", userTerminalGateIndex)))
+        processLifecycleCommand(userTerminalInterface, "Crash");
+    if (NetworkInterface *satelliteInterface = dynamic_cast<NetworkInterface *>(satModule->getSubmodule("ppp", satelliteGateIndex)))
+        processLifecycleCommand(satelliteInterface, "Crash");
+}
+
+void LeoChannelConstructor::finalizeUserTerminalLinks()
+{
+    for (const auto& [userTerminalIndex, activeLink] : activeUserTerminalLinks) {
+        cModule *satModule = satelliteModules[activeLink.satelliteIndex];
+        cModule *userTerminalModule = userTerminalModules[userTerminalIndex];
+        if (satModule == nullptr || userTerminalModule == nullptr)
+            continue;
+
+        cGate *satelliteInputGate = satModule->gateHalf("pppg", cGate::INPUT, activeLink.satelliteOutputGate->getIndex());
+        cGate *userTerminalInputGate = userTerminalModule->gateHalf("pppg", cGate::INPUT, activeLink.userTerminalOutputGate->getIndex());
+
+        IInterfaceTable *satelliteIft = check_and_cast<IInterfaceTable *>(satModule->getSubmodule("interfaceTable"));
+        if (NetworkInterface *satelliteInterface = satelliteIft->findInterfaceByNodeInputGateId(satelliteInputGate->getId())) {
+            processLifecycleCommand(satelliteInterface, "Start");
+            configurator->addIpAddressMap(satelliteInterface->getIpv4Address().getInt(), satModule->getFullName());
+        }
+
+        IInterfaceTable *userTerminalIft = check_and_cast<IInterfaceTable *>(userTerminalModule->getSubmodule("interfaceTable"));
+        if (NetworkInterface *userTerminalInterface = userTerminalIft->findInterfaceByNodeInputGateId(userTerminalInputGate->getId())) {
+            processLifecycleCommand(userTerminalInterface, "Start");
+            configurator->addIpAddressMap(userTerminalInterface->getIpv4Address().getInt(), userTerminalModule->getFullName());
+        }
+    }
+
+    configurator->setGroundStationsWithEndpoints();
+}
+
 
 void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
 {
+    const std::string moduleTypeName = mod->getNedTypeName();
     cModuleType *mainPppModuleType;
-    if(!addToGraph){
+    if(!addToGraph && !isUserTerminalTypeName(moduleTypeName)){
         mainPppModuleType = cModuleType::get("leosatellites.linklayer.ppp.PppInterfaceMutable");
     }
     else{
         mainPppModuleType = cModuleType::get(interfaceType);
     }
 
-    int submoduleVectorSize = mod->gateSize("pppg");
-    for (SubmoduleIterator it(mod); !it.end(); ++it) {
-        cModule *submodule = *it;
-        if (submodule->isVector() && submodule->isName("ppp")) {
-            if (submoduleVectorSize < submodule->getVectorSize())
-                submoduleVectorSize = submodule->getVectorSize();
-        }
-    }
+    int existingPppVectorSize = 0;
+    if (cModule *existingPpp0 = mod->getSubmodule("ppp", 0))
+        existingPppVectorSize = existingPpp0->getVectorSize();
+    int submoduleVectorSize = std::max(mod->gateSize("pppg"), existingPppVectorSize);
     mod->setSubmoduleVectorSize("ppp", submoduleVectorSize);
     cModule *module = nullptr;
     for(int i = 0; i < submoduleVectorSize; i++){
@@ -538,7 +801,10 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
                 destMod = srcGateOut->getPathEndGate()->getOwnerModule()->getParentModule()->getParentModule();
             }
 
-            if(configurator->getNodeTypeCode(configurator->getNodeModuleGraphId(destMod->getFullName())) == 2){ // If connected to end user
+            const std::string destTypeName = destMod->getNedTypeName();
+            const bool usesLegacyEndUserInterface = isEndUserTypeName(moduleTypeName) || isEndUserTypeName(destTypeName);
+            const bool usesUserTerminalInterface = isUserTerminalTypeName(moduleTypeName) || isUserTerminalTypeName(destTypeName);
+            if(usesLegacyEndUserInterface && !usesUserTerminalInterface){
                 pppModuleType = cModuleType::get("leosatellites.linklayer.ppp.PppInterfaceMutable");
             }
 
@@ -635,18 +901,102 @@ void LeoChannelConstructor::prepareInterface(NetworkInterface *interfaceEntry)
     }
 }
 
-void LeoChannelConstructor::createChannel(std::string delay, cGate *gate1, cGate*gate2, bool endPointChannel)
+uint64_t LeoChannelConstructor::getGroundStationLinkKey(int gsNum, int satNum) const
+{
+    return (static_cast<uint64_t>(static_cast<uint32_t>(gsNum)) << 32) | static_cast<uint32_t>(satNum);
+}
+
+void LeoChannelConstructor::updateTimedLink(const TimedLinkRecord& linkRecord)
+{
+    double delaySeconds = 0;
+    if (linkRecord.isGroundStationLink) {
+        delaySeconds = (linkRecord.sourceSatelliteMobility->getDistance(linkRecord.destinationGroundStationMobility->getLUTPositionY(),
+                                                                       linkRecord.destinationGroundStationMobility->getLUTPositionX(),
+                                                                       0) * 1000.0) / 299792458.0;
+        configurator->addGSLinktoTopologyGraph(numOfSats + linkRecord.groundStationIndex, linkRecord.satelliteIndex, delaySeconds * 1000.0);
+    }
+    else {
+        delaySeconds = (linkRecord.sourceSatelliteMobility->getDistance(linkRecord.destinationSatelliteMobility->getLatitude(),
+                                                                       linkRecord.destinationSatelliteMobility->getLongitude(),
+                                                                       linkRecord.destinationSatelliteMobility->getAltitude()) * 1000.0) / 299792458.0;
+    }
+
+    linkRecord.forwardChannel->setDelay(delaySeconds);
+    linkRecord.forwardChannel->setDatarate(linkDataRate);
+    linkRecord.reverseChannel->setDelay(delaySeconds);
+    linkRecord.reverseChannel->setDatarate(linkDataRate);
+}
+
+void LeoChannelConstructor::createGroundStationLink(int gsNum, int satNum)
+{
+    cModule *satMod = satelliteModules[satNum];
+    cModule *gsMod = groundStationModules[gsNum];
+
+    auto satGatePair = getNextFreeGate(satMod);
+    auto gsGatePair = getNextFreeGate(gsMod);
+
+    cGate *inGateSat = satGatePair.first;
+    cGate *outGateSat = satGatePair.second;
+    cGate *inGateGs = gsGatePair.first;
+    cGate *outGateGs = gsGatePair.second;
+
+    createChannel(0, outGateSat, inGateGs, false);
+    createChannel(0, outGateGs, inGateSat, false);
+
+    auto *forwardChannel = check_and_cast<cDatarateChannel *>(outGateSat->getChannel());
+    auto *reverseChannel = check_and_cast<cDatarateChannel *>(outGateGs->getChannel());
+
+    ActiveGroundStationLink activeLink;
+    activeLink.satelliteOutputGate = outGateSat;
+    activeLink.groundStationOutputGate = outGateGs;
+    activeLink.linkRecord = {satelliteMobilities[satNum], nullptr, groundStationMobilities[gsNum],
+                             forwardChannel, reverseChannel, satNum, gsNum, true};
+
+    IInterfaceTable* sourceIft = check_and_cast<IInterfaceTable*>(satMod->getSubmodule("interfaceTable"));
+    if (NetworkInterface* ie = sourceIft->findInterfaceByNodeInputGateId(inGateSat->getId())) {
+        processLifecycleCommand(ie, "Start");
+        configurator->addNextHopInterface(satMod, gsMod, ie->getInterfaceId());
+        configurator->addIpAddressMap(ie->getIpv4Address().getInt(), satMod->getFullName());
+    }
+
+    IInterfaceTable* destIft = check_and_cast<IInterfaceTable*>(gsMod->getSubmodule("interfaceTable"));
+    if (NetworkInterface* die = destIft->findInterfaceByNodeInputGateId(inGateGs->getId())) {
+        processLifecycleCommand(die, "Start");
+        configurator->addNextHopInterface(gsMod, satMod, die->getInterfaceId());
+        configurator->addIpAddressMap(die->getIpv4Address().getInt(), gsMod->getFullName());
+    }
+
+    dirtyPppModules.insert(satMod);
+    dirtyPppModules.insert(gsMod);
+    activeGroundStationLinks.emplace(getGroundStationLinkKey(gsNum, satNum), activeLink);
+}
+
+void LeoChannelConstructor::removeGroundStationLink(int gsNum, int satNum, ActiveGroundStationLink& link)
+{
+    cModule *satMod = satelliteModules[satNum];
+    cModule *gsMod = groundStationModules[gsNum];
+
+    configurator->removeNextHopInterface(gsMod, satMod);
+    configurator->removeNextHopInterface(satMod, gsMod);
+
+    const int gsGateIndex = link.groundStationOutputGate->getIndex();
+    const int satGateIndex = link.satelliteOutputGate->getIndex();
+
+    link.groundStationOutputGate->disconnect();
+    link.satelliteOutputGate->disconnect();
+
+    if (NetworkInterface* gsInterface = dynamic_cast<NetworkInterface*>(gsMod->getSubmodule("ppp", gsGateIndex)))
+        processLifecycleCommand(gsInterface, "Crash");
+    if (NetworkInterface* satInterface = dynamic_cast<NetworkInterface*>(satMod->getSubmodule("ppp", satGateIndex)))
+        processLifecycleCommand(satInterface, "Crash");
+}
+
+void LeoChannelConstructor::createChannel(double delaySeconds, cGate *gate1, cGate*gate2, bool endPointChannel)
 {
     cChannelType *channelType = cChannelType::get("ned.DatarateChannel");
-    cChannel *channel = channelType->create("channel");
-    channel->par("delay").parse(delay.c_str());
-
-    if(!endPointChannel){
-        channel->par("datarate").parse(linkDataRate.c_str());
-    }
-    else{
-        channel->par("datarate").parse("1000Gbps");
-    }
+    auto *channel = check_and_cast<cDatarateChannel *>(channelType->create("channel"));
+    channel->setDelay(delaySeconds);
+    channel->setDatarate(endPointChannel ? 1e12 : linkDataRate);
     gate1->connectTo(gate2, channel);
 }
 

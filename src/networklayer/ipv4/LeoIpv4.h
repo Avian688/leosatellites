@@ -20,6 +20,9 @@
 #include <inet/networklayer/common/NextHopAddressTag_m.h>
 #include <inet/linklayer/common/InterfaceTag_m.h>
 
+#include <unordered_map>
+#include <vector>
+
 namespace inet {
 
 class LeoIpv4NetworkConfigurator;
@@ -30,14 +33,13 @@ protected:
     virtual void routeUnicastPacket(Packet *packet) override;
     virtual void stop() override;
     int nodeId;
-    std::map<uint32_t,uint32_t> nextHops;   //Destination Address (int format) -> Interface ID
-    std::map<std::string,std::string> nextHopsStr;   //Destination Address (int format) -> Interface ID
-    std::map<int, std::map<int,int>> kNextHops;
+    std::unordered_map<uint32_t,uint32_t> nextHops;   //Destination Address (int format) -> Interface ID
+    std::vector<int> primaryNextHopInterfaces;
+    std::unordered_map<int, std::unordered_map<int, int>> kNextHops;
 public:
     void setNodeId(int id);
     void addKNextHop(int k, int destinationNode, int nextInterfaceID);
     void addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID);
-    void addNextHopStr(std::string destinationAddr, std::string nextInterfaceID);
     void clearNextHops();
     LeoIpv4();
     virtual ~LeoIpv4();

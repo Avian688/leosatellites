@@ -20,6 +20,8 @@
 #include <igraph.h>
 #include <queue>
 #include <tuple>
+#include <unordered_map>
+#include <vector>
 #include <inet/common/Topology.h>
 #include "inet/networklayer/configurator/base/L3NetworkConfiguratorBase.h"
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
@@ -53,16 +55,19 @@ protected:
     //internal state
     Topology topology;
     bool loadFiles;
-    std::unordered_map<int, cModule*> nodeModules;
+    std::vector<cModule*> nodeModules;
+    std::vector<LeoIpv4*> ipv4Modules;
+    std::unordered_map<cModule*, int> moduleGraphIdByModule;
 
     std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;
-    std::map<cModule*, std::map<cModule*, int>> nextHopInterfaceMap;
+    std::vector<std::vector<int>> nextHopInterfaceMatrix;
     std::string networkName;
     std::string configLocation;
     std::string filePrefix;
     unsigned int numOfSats;
     unsigned int numOfGS;
     unsigned int numOfClients;
+    unsigned int numOfUserTerminals;
     unsigned int numOfPlanes;
     unsigned int satPerPlane;
     unsigned int numOfISLs;
@@ -73,20 +78,22 @@ protected:
     simtime_t currentInterval;
     igraph_vector_int_t islVec;
 
-    std::map<std::string, int> moduleIDMap;
+    std::unordered_map<std::string, int> moduleIDMap;
 
-    std::map<int, int> routerIdMap;
+    std::unordered_map<int, int> routerIdMap;
 
-    std::map<std::string, int> moduleGraphIDMap;
+    std::unordered_map<std::string, int> moduleGraphIDMap;
 
-    std::unordered_map<int, int> endpointToNodeMap; // endPointModID → groundStationID
-    std::unordered_map<int, int> nodeNumEndpointsMap; // groundStationID → numOfEndPoints
-    std::unordered_map<int, int> endPointPos; // endPointModID → what id endPoint is
+    std::unordered_map<int, int> endpointToNodeMap; // endPointModID → attached satellite or ground station ID
+    std::unordered_map<int, int> nodeNumEndpointsMap; // attached node ID → numOfEndPoints
+    std::unordered_map<int, int> endpointAttachmentInterfaceIds; // endPointModID → interface ID on attached node
+    std::unordered_map<int, int> endpointUplinkInterfaceIds; // endPointModID → interface ID on endpoint
 
 public:
     virtual void establishInitialISLs();
     virtual void updateForwardingStates(simtime_t currentInterval);
     virtual void generateTopologyGraph(simtime_t currentInterval);
+    virtual void clearGroundStationLinks();
     virtual void addNextHopInterface(cModule* source, cModule* destination, int interfaceID);
     virtual void removeNextHopInterface(cModule* source, cModule* destination);
     virtual void addGSLinktoTopologyGraph(int gsNum, int destNum, double weight);
@@ -113,7 +120,8 @@ public:
 
     virtual int getTotalEndpoints(int nodeId);
 
-    virtual int getEndpointId(int nodeId);
+    virtual int getEndpointAttachmentInterfaceId(int nodeId);
+    virtual int getEndpointUplinkInterfaceId(int nodeId);
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

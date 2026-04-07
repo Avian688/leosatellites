@@ -24,4 +24,7 @@ simple LeoChannelConstructor
        double dataRate @unit(bps) = default(10Mbps);
        int queueSize = default(1000);
        string interfaceType = default("leosatellites.linklayer.ppp.PppInterfaceMutable"); //Required if you need different queues.
+       double userTerminalUpdateInterval @unit(s) = default(15s);
+       double userTerminalSampleInterval @unit(s) = default(1s);
+       double userTerminalHandoverDowntime @unit(s) = default(50ms);
 }

@@ -2,6 +2,8 @@
 
 #include <ctime>
 #include <fstream>
+#include <unordered_map>
+#include <vector>
 
 #include "libnorad/cTLE.h"
 #include "libnorad/cOrbit.h"
@@ -9,6 +11,27 @@
 
 using namespace omnetpp;
 Define_Module(NoradTLE);
+
+namespace {
+
+const std::vector<std::string>& getCachedTleLines(const std::string& filename)
+{
+    static std::unordered_map<std::string, std::vector<std::string>> tleCache;
+
+    auto it = tleCache.find(filename);
+    if (it != tleCache.end())
+        return it->second;
+
+    std::ifstream tleFile(filename.c_str());
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(tleFile, line))
+        lines.push_back(line);
+
+    return tleCache.emplace(filename, std::move(lines)).first->second;
+}
+
+}
 
 NoradTLE::NoradTLE()
 {
@@ -26,45 +49,44 @@ void NoradTLE::finish()
 void NoradTLE::initializeMobility(const simtime_t& targetTime)
 {
     std::string filename = par("TLEfile").stringValue();
-
-    // read file with TLE data
-    std::fstream tleFile;
-    tleFile.open(filename.c_str());
-
-    // Length 100 should be enough since lines are usually 70+'\n' char long
-    char line[100]     = "";
-    char line1tmp[100] = "";
-    char line2tmp[100] = "";
+    const auto& tleLines = getCachedTleLines(filename);
 
     std::string satelliteName = getParentModule()->par("satelliteName").stringValue();
     std::string line_str;
+    std::string line1tmp;
+    std::string line2tmp;
     if (satelliteName == "") {
         int index = getParentModule()->getIndex();
-        int i = 0;
-        do {
-            tleFile.getline(line, 100);
-            if (!tleFile.good()) {
-                EV << "Error in Norad::initializeMobility(): Cannot read further satellites from TLE file!" << std::endl;
-                endSimulation();
-            }
-        } while (i++ < index * 3 && tleFile.good());
-        line_str.append(line);
+        const int baseLine = index * 3;
+        if (baseLine + 2 >= static_cast<int>(tleLines.size())) {
+            EV << "Error in Norad::initializeMobility(): Cannot read further satellites from TLE file!" << std::endl;
+            endSimulation();
+        }
+        line_str = tleLines[baseLine];
+        line1tmp = tleLines[baseLine + 1];
+        line2tmp = tleLines[baseLine + 2];
     } else {
-        do {
-            line_str = "";
-            tleFile.getline(line, 100);
-            line_str.append(line);
-        } while (tleFile.good()
-                && line_str.find(satelliteName.c_str()) == std::string::npos);
+        size_t matchedLine = std::string::npos;
+        for (size_t i = 0; i < tleLines.size(); i++) {
+            if (tleLines[i].find(satelliteName.c_str()) != std::string::npos) {
+                matchedLine = i;
+                break;
+            }
+        }
+        if (matchedLine == std::string::npos || matchedLine + 2 >= tleLines.size()) {
+            EV << "Error in Norad::initializeMobility(): Unable to locate satellite in TLE file!" << std::endl;
+            endSimulation();
+        }
+        line_str = tleLines[matchedLine];
+        line1tmp = tleLines[matchedLine + 1];
+        line2tmp = tleLines[matchedLine + 2];
     }
-    tleFile.getline(line1tmp, 100);
-    tleFile.getline(line2tmp, 100);
 
     // Pretty up the satellites name
     line_str = line_str.substr(0, line_str.find("  "));
     line0 = line_str;
-    line1.append(line1tmp);
-    line2.append(line2tmp);
+    line1 = line1tmp;
+    line2 = line2tmp;
     cTle tle(line0, line1, line2);
     orbit = new cOrbit(tle);
 
@@ -100,4 +122,3 @@ void NoradTLE::handleMessage(cMessage* msg)
 {
     error("Error in Norad::handleMessage(): This module is not able to handle messages.");
 }
-

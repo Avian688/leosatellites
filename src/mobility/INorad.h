@@ -54,9 +54,11 @@ public:
 
     // returns the elevation to a reference point
     virtual double getElevation(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
+    virtual double getElevationAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 
     // returns the azimuth
     virtual double getAzimuth(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
+    virtual double getAzimuthAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 
     // returns the altitude
     virtual double getAltitude();
@@ -64,8 +66,10 @@ public:
 
     // returns the distance to the satellite from a reference point (distance in km)
     virtual double getDistance(const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
+    virtual double getDistanceAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 
     virtual bool isReachable(const double& refLatitude, const double& refLongitude, const double& refAltitude);
+    virtual bool isReachableAtTime(const simtime_t& targetTime, const double& refLatitude, const double& refLongitude, const double& refAltitude = -9999);
 protected:
     virtual void handleMessage(cMessage* msg) override;
 
