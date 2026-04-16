@@ -187,14 +187,12 @@ void LeoNetworkConfigurator::reinvokeConfigurator(Topology& topology, cXMLElemen
         //for( auto & p : node->interfaceInfos ) delete p;
         node->interfaceInfos.clear();
         LeoIpv4RoutingTable *routingTable = dynamic_cast<LeoIpv4RoutingTable*>(node->routingTable);
-        for(int j = 0; j < routingTable->getNumRoutes(); j++){
-            //delete node->routingTable->routes;
-            //Ipv4RoutingTable *routingTable = dynamic_cast<Ipv4RoutingTable*>(node->routingTable); //TO DO, change it so it isnt restricted to ipv4
-            bool check = routingTable->deleteRoute(routingTable->getRoute(j));
+        while (routingTable->getNumRoutes() > 0) {
+            bool check = routingTable->deleteRoute(routingTable->getRoute(0));
             EV_DEBUG << check;
         }
-        for(int m = 0; m < node->routingTable->getNumMulticastRoutes(); m++){
-            node->routingTable->deleteMulticastRoute(node->routingTable->getMulticastRoute(m));
+        while (node->routingTable->getNumMulticastRoutes() > 0) {
+            node->routingTable->deleteMulticastRoute(node->routingTable->getMulticastRoute(0));
         }
         //routingTable->Ipv4RoutingTable;
         std::for_each(node->staticRoutes.begin(), node->staticRoutes.end(), []( Ipv4Route* route) { delete route; });

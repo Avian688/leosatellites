@@ -110,6 +110,8 @@ protected:
     void removeGroundStationLink(int gsNum, int satNum, ActiveGroundStationLink& link);
     bool refreshUserTerminalLinks(bool forceUpdate);
     int selectServingSatelliteForUserTerminal(int userTerminalIndex);
+    bool isGroundStationSatelliteReachableNow(int groundStationIndex, int satelliteIndex) const;
+    bool isUserTerminalSatelliteReachableNow(int userTerminalIndex, int satelliteIndex) const;
     void createUserTerminalLink(int userTerminalIndex, int satNum);
     void removeUserTerminalLink(int userTerminalIndex, ActiveUserTerminalLink& link);
     void finalizeUserTerminalLinks();

@@ -425,11 +425,9 @@ void LeoChannelConstructor::setUpGSLinks()
 {
     //Sets up new GS links if new satellite is reachable.
     for(int gsNum = 0; gsNum < numOfGS; gsNum++){
-        GroundStationMobility* gsMobility = groundStationMobilities[gsNum];
         for(int satNum = 0; satNum < numOfSats; satNum++){
-            SatelliteMobility* satMobility = satelliteMobilities[satNum];
             const uint64_t linkKey = getGroundStationLinkKey(gsNum, satNum);
-            const bool reachable = satMobility->isReachable(gsMobility->getLUTPositionY(), gsMobility->getLUTPositionX(), 0);
+            const bool reachable = isGroundStationSatelliteReachableNow(gsNum, satNum);
             auto activeIt = activeGroundStationLinks.find(linkKey);
 
             if (reachable) {
@@ -452,7 +450,23 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
         return false;
     }
 
-    bool linksChanged = false;
+    bool linksReadyToFinalize = false;
+    bool endpointTopologyChanged = false;
+
+    auto removeActiveUserTerminalLink = [&](int userTerminalIndex, std::unordered_map<int, ActiveUserTerminalLink>::iterator activeLinkIt) {
+        removeUserTerminalLink(userTerminalIndex, activeLinkIt->second);
+        activeUserTerminalLinks.erase(activeLinkIt);
+        pendingUserTerminalHandovers.erase(userTerminalIndex);
+        endpointTopologyChanged = true;
+    };
+
+    auto schedulePendingHandover = [&](int userTerminalIndex, int targetSatelliteIndex) {
+        PendingUserTerminalHandover pendingHandover;
+        pendingHandover.userTerminalIndex = userTerminalIndex;
+        pendingHandover.targetSatelliteIndex = targetSatelliteIndex;
+        pendingHandover.reconnectTime = simTime() + userTerminalHandoverDowntime;
+        pendingUserTerminalHandovers[userTerminalIndex] = pendingHandover;
+    };
 
     if (forceUpdate) {
         pendingUserTerminalHandovers.clear();
@@ -460,35 +474,64 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
         for (int userTerminalIndex = 0; userTerminalIndex < numOfUserTerminals; userTerminalIndex++) {
             const int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
             auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
-            if (activeLinkIt != activeUserTerminalLinks.end()) {
-                removeUserTerminalLink(userTerminalIndex, activeLinkIt->second);
-                activeUserTerminalLinks.erase(activeLinkIt);
-            }
+            if (activeLinkIt != activeUserTerminalLinks.end() && activeLinkIt->second.satelliteIndex == selectedSatellite)
+                continue;
+            if (activeLinkIt != activeUserTerminalLinks.end())
+                removeActiveUserTerminalLink(userTerminalIndex, activeLinkIt);
 
-            if (selectedSatellite >= 0) {
+            if (selectedSatellite >= 0 && isUserTerminalSatelliteReachableNow(userTerminalIndex, selectedSatellite)) {
                 createUserTerminalLink(userTerminalIndex, selectedSatellite);
-                linksChanged = true;
+                linksReadyToFinalize = true;
             }
         }
         scheduleUserTerminalHandoverTimer();
-        return linksChanged;
+        return linksReadyToFinalize;
+    }
+
+    // Drop links that have actually gone out of view, then keep probing for a
+    // replacement so detached terminals don't wait until the next polling slot.
+    for (int userTerminalIndex = 0; userTerminalIndex < numOfUserTerminals; userTerminalIndex++) {
+        auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
+        if (activeLinkIt != activeUserTerminalLinks.end() &&
+            !isUserTerminalSatelliteReachableNow(userTerminalIndex, activeLinkIt->second.satelliteIndex)) {
+            removeActiveUserTerminalLink(userTerminalIndex, activeLinkIt);
+        }
+
+        if (activeUserTerminalLinks.find(userTerminalIndex) == activeUserTerminalLinks.end() &&
+            pendingUserTerminalHandovers.find(userTerminalIndex) == pendingUserTerminalHandovers.end()) {
+            const int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
+            if (selectedSatellite >= 0 && isUserTerminalSatelliteReachableNow(userTerminalIndex, selectedSatellite))
+                schedulePendingHandover(userTerminalIndex, selectedSatellite);
+        }
     }
 
     if (userTerminalUpdateInterval > SIMTIME_ZERO && simTime() >= nextUserTerminalUpdate) {
         for (int userTerminalIndex = 0; userTerminalIndex < numOfUserTerminals; userTerminalIndex++) {
             const int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
             auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
+            const int currentSatellite = activeLinkIt != activeUserTerminalLinks.end() ? activeLinkIt->second.satelliteIndex : -1;
+            const bool currentReachableNow = isUserTerminalSatelliteReachableNow(userTerminalIndex, currentSatellite);
+            const bool selectedReachableNow = isUserTerminalSatelliteReachableNow(userTerminalIndex, selectedSatellite);
+
             if (activeLinkIt != activeUserTerminalLinks.end()) {
-                removeUserTerminalLink(userTerminalIndex, activeLinkIt->second);
-                activeUserTerminalLinks.erase(activeLinkIt);
+                if (selectedSatellite == currentSatellite) {
+                    pendingUserTerminalHandovers.erase(userTerminalIndex);
+                    continue;
+                }
+
+                // Keep using a healthy serving satellite until an immediate
+                // replacement exists. Otherwise the polling interval can create
+                // multi-second blackouts on its own.
+                if ((selectedSatellite < 0 || !selectedReachableNow) && currentReachableNow) {
+                    pendingUserTerminalHandovers.erase(userTerminalIndex);
+                    continue;
+                }
+
+                removeActiveUserTerminalLink(userTerminalIndex, activeLinkIt);
             }
 
-            if (selectedSatellite >= 0) {
-                PendingUserTerminalHandover pendingHandover;
-                pendingHandover.userTerminalIndex = userTerminalIndex;
-                pendingHandover.targetSatelliteIndex = selectedSatellite;
-                pendingHandover.reconnectTime = simTime() + userTerminalHandoverDowntime;
-                pendingUserTerminalHandovers[userTerminalIndex] = pendingHandover;
+            if (selectedSatellite >= 0 && selectedReachableNow) {
+                schedulePendingHandover(userTerminalIndex, selectedSatellite);
             }
             else {
                 pendingUserTerminalHandovers.erase(userTerminalIndex);
@@ -499,10 +542,13 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
             nextUserTerminalUpdate += userTerminalUpdateInterval;
     }
 
-    linksChanged = completePendingUserTerminalHandovers() || linksChanged;
+    linksReadyToFinalize = completePendingUserTerminalHandovers() || linksReadyToFinalize;
     scheduleUserTerminalHandoverTimer();
 
-    return linksChanged;
+    if (endpointTopologyChanged && !linksReadyToFinalize)
+        configurator->setGroundStationsWithEndpoints();
+
+    return linksReadyToFinalize;
 }
 
 bool LeoChannelConstructor::completePendingUserTerminalHandovers()
@@ -514,7 +560,8 @@ bool LeoChannelConstructor::completePendingUserTerminalHandovers()
         if (pendingHandover.reconnectTime > simTime())
             continue;
 
-        if (pendingHandover.targetSatelliteIndex >= 0) {
+        if (pendingHandover.targetSatelliteIndex >= 0 &&
+            isUserTerminalSatelliteReachableNow(userTerminalIndex, pendingHandover.targetSatelliteIndex)) {
             createUserTerminalLink(userTerminalIndex, pendingHandover.targetSatelliteIndex);
             linksChanged = true;
         }
@@ -525,6 +572,38 @@ bool LeoChannelConstructor::completePendingUserTerminalHandovers()
         pendingUserTerminalHandovers.erase(userTerminalIndex);
 
     return linksChanged;
+}
+
+bool LeoChannelConstructor::isGroundStationSatelliteReachableNow(int groundStationIndex, int satelliteIndex) const
+{
+    if (groundStationIndex < 0 || groundStationIndex >= numOfGS || satelliteIndex < 0 || satelliteIndex >= numOfSats)
+        return false;
+
+    GroundStationMobility *groundStationMobility = groundStationMobilities[groundStationIndex];
+    INorad *noradModule = satelliteNoradModules[satelliteIndex];
+    if (groundStationMobility == nullptr || noradModule == nullptr)
+        return false;
+
+    return noradModule->isReachableAtTime(simTime(),
+                                          groundStationMobility->getLUTPositionY(),
+                                          groundStationMobility->getLUTPositionX(),
+                                          0);
+}
+
+bool LeoChannelConstructor::isUserTerminalSatelliteReachableNow(int userTerminalIndex, int satelliteIndex) const
+{
+    if (userTerminalIndex < 0 || userTerminalIndex >= numOfUserTerminals || satelliteIndex < 0 || satelliteIndex >= numOfSats)
+        return false;
+
+    GroundStationMobility *userTerminalMobility = userTerminalMobilities[userTerminalIndex];
+    INorad *noradModule = satelliteNoradModules[satelliteIndex];
+    if (userTerminalMobility == nullptr || noradModule == nullptr)
+        return false;
+
+    return noradModule->isReachableAtTime(simTime(),
+                                          userTerminalMobility->getLUTPositionY(),
+                                          userTerminalMobility->getLUTPositionX(),
+                                          0);
 }
 
 void LeoChannelConstructor::scheduleUserTerminalHandoverTimer()
@@ -567,24 +646,45 @@ int LeoChannelConstructor::selectServingSatelliteForUserTerminal(int userTermina
     int bestSatellite = -1;
     double bestScore = std::numeric_limits<double>::infinity();
     double bestCurrentElevation = -std::numeric_limits<double>::infinity();
-    const double latitude = userTerminalMobility->getLUTPositionY();
-    const double longitude = userTerminalMobility->getLUTPositionX();
+
+    int bestReachableSatellite = -1;
+    double bestReachableScore = std::numeric_limits<double>::infinity();
+    double bestReachableElevation = -std::numeric_limits<double>::infinity();
 
     for (int satNum = 0; satNum < numOfSats; satNum++) {
-        INorad *noradModule = satelliteNoradModules[satNum];
-        if (noradModule == nullptr || !noradModule->isReachableAtTime(slotStart, latitude, longitude, 0))
+        const auto candidateTrajectory = buildCandidateTrajectory(satNum, userTerminalMobility, slotStart, slotEnd);
+        bool hasCandidateSample = false;
+        for (const auto& sample : candidateTrajectory) {
+            if (sample.reachable) {
+                hasCandidateSample = true;
+                break;
+            }
+        }
+        if (!hasCandidateSample)
             continue;
 
-        const auto candidateTrajectory = buildCandidateTrajectory(satNum, userTerminalMobility, slotStart, slotEnd);
         const double score = computeDtwDistance(referenceTrajectory, candidateTrajectory);
-        const double currentElevation = noradModule->getElevationAtTime(slotStart, latitude, longitude, 0);
+        const TopocentricSample& firstSample = candidateTrajectory.front();
+        const double currentElevation = firstSample.reachable ? firstSample.elevation : -std::numeric_limits<double>::infinity();
 
         if (score < bestScore || (score == bestScore && currentElevation > bestCurrentElevation)) {
             bestScore = score;
             bestCurrentElevation = currentElevation;
             bestSatellite = satNum;
         }
+
+        if (firstSample.reachable && (score < bestReachableScore || (score == bestReachableScore && currentElevation > bestReachableElevation))) {
+            bestReachableScore = score;
+            bestReachableElevation = currentElevation;
+            bestReachableSatellite = satNum;
+        }
     }
+
+    // During handover we need a satellite that can carry traffic now; otherwise
+    // the reconnect path may ignore an immediately usable satellite in favor of
+    // one that only becomes reachable later in the lookahead window.
+    if (bestReachableSatellite >= 0)
+        return bestReachableSatellite;
 
     return bestSatellite;
 }
@@ -731,12 +831,20 @@ void LeoChannelConstructor::removeUserTerminalLink(int userTerminalIndex, Active
     const int satelliteGateIndex = link.satelliteOutputGate->getIndex();
     const int userTerminalGateIndex = link.userTerminalOutputGate->getIndex();
 
+    NetworkInterface *userTerminalInterface = dynamic_cast<NetworkInterface *>(userTerminalModule->getSubmodule("ppp", userTerminalGateIndex));
+    NetworkInterface *satelliteInterface = dynamic_cast<NetworkInterface *>(satModule->getSubmodule("ppp", satelliteGateIndex));
+
+    if (userTerminalInterface != nullptr && userTerminalInterface->getIpv4Address().getInt() != 0)
+        configurator->eraseIpAddressMap(userTerminalInterface->getIpv4Address().getInt());
+    if (satelliteInterface != nullptr && satelliteInterface->getIpv4Address().getInt() != 0)
+        configurator->eraseIpAddressMap(satelliteInterface->getIpv4Address().getInt());
+
     link.userTerminalOutputGate->disconnect();
     link.satelliteOutputGate->disconnect();
 
-    if (NetworkInterface *userTerminalInterface = dynamic_cast<NetworkInterface *>(userTerminalModule->getSubmodule("ppp", userTerminalGateIndex)))
+    if (userTerminalInterface != nullptr)
         processLifecycleCommand(userTerminalInterface, "Crash");
-    if (NetworkInterface *satelliteInterface = dynamic_cast<NetworkInterface *>(satModule->getSubmodule("ppp", satelliteGateIndex)))
+    if (satelliteInterface != nullptr)
         processLifecycleCommand(satelliteInterface, "Crash");
 }
 
@@ -982,12 +1090,20 @@ void LeoChannelConstructor::removeGroundStationLink(int gsNum, int satNum, Activ
     const int gsGateIndex = link.groundStationOutputGate->getIndex();
     const int satGateIndex = link.satelliteOutputGate->getIndex();
 
+    NetworkInterface *gsInterface = dynamic_cast<NetworkInterface *>(gsMod->getSubmodule("ppp", gsGateIndex));
+    NetworkInterface *satInterface = dynamic_cast<NetworkInterface *>(satMod->getSubmodule("ppp", satGateIndex));
+
+    if (gsInterface != nullptr && gsInterface->getIpv4Address().getInt() != 0)
+        configurator->eraseIpAddressMap(gsInterface->getIpv4Address().getInt());
+    if (satInterface != nullptr && satInterface->getIpv4Address().getInt() != 0)
+        configurator->eraseIpAddressMap(satInterface->getIpv4Address().getInt());
+
     link.groundStationOutputGate->disconnect();
     link.satelliteOutputGate->disconnect();
 
-    if (NetworkInterface* gsInterface = dynamic_cast<NetworkInterface*>(gsMod->getSubmodule("ppp", gsGateIndex)))
+    if (gsInterface != nullptr)
         processLifecycleCommand(gsInterface, "Crash");
-    if (NetworkInterface* satInterface = dynamic_cast<NetworkInterface*>(satMod->getSubmodule("ppp", satGateIndex)))
+    if (satInterface != nullptr)
         processLifecycleCommand(satInterface, "Crash");
 }
 

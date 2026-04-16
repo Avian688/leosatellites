@@ -21,6 +21,13 @@
 namespace inet {
 Define_Module(LeoIpv4NetworkConfigurator);
 
+namespace {
+
+constexpr int32_t ROUTE_FILE_MAGIC = 0x4c454f32;   // "LEO2"
+constexpr int32_t ROUTE_FILE_VERSION = 2;
+
+}
+
 static void silent_warning_handler(const char *reason, const char *file, int line) {
     // Silence all warnings as the console will be filled with warnings if a ground station cannot connect to a satellite
 }
@@ -138,15 +145,52 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
     if (!file.is_open())
         return false;
 
+    const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS), static_cast<int>(nodeModules.size()));
+    for (int nodeId = 0; nodeId < routableNodeCount; nodeId++) {
+        LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
+        if (ipv4Mod == nullptr) {
+            cModule *nodeMod = nodeModules[nodeId];
+            ipv4Mod = nodeMod != nullptr ? dynamic_cast<LeoIpv4 *>(nodeMod->getModuleByPath(".ipv4.ip")) : nullptr;
+            ipv4Modules[nodeId] = ipv4Mod;
+        }
+        if (ipv4Mod != nullptr)
+            ipv4Mod->clearNextHops();
+    }
+
+    int32_t firstValue = 0;
+    file.read(reinterpret_cast<char *>(&firstValue), sizeof(firstValue));
+    if (file.fail())
+        return false;
+
+    bool usesStableNextHopNodeFormat = false;
+    if (firstValue == ROUTE_FILE_MAGIC) {
+        int32_t version = 0;
+        file.read(reinterpret_cast<char *>(&version), sizeof(version));
+        if (file.fail())
+            return false;
+        if (version != ROUTE_FILE_VERSION)
+            throw cRuntimeError("Unsupported route file version %d in %s", version, fName.c_str());
+        usesStableNextHopNodeFormat = true;
+    }
+    else {
+        file.clear();
+        file.seekg(0, std::ios::beg);
+        if (numOfUserTerminals > 0) {
+            throw cRuntimeError("Legacy route file format detected in %s while user terminals are enabled. "
+                                "These files store raw interface IDs and must be regenerated with the patched save run.",
+                                fName.c_str());
+        }
+    }
+
     while (true) {
         int nodeId;
         int destAddr;
-        int nextHopId;
+        int nextHopToken;
 
         // Read a record: 3 integers
         file.read(reinterpret_cast<char*>(&nodeId), sizeof(int));
         file.read(reinterpret_cast<char*>(&destAddr), sizeof(int));
-        file.read(reinterpret_cast<char*>(&nextHopId), sizeof(int));
+        file.read(reinterpret_cast<char*>(&nextHopToken), sizeof(int));
 
         if (file.eof() || file.fail())
             break;
@@ -161,6 +205,17 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
             if (!ipv4Mod)
                 continue;
             ipv4Modules[nodeId] = ipv4Mod;
+        }
+
+        int nextHopId = nextHopToken;
+        if (usesStableNextHopNodeFormat) {
+            if (nextHopToken < 0 || nextHopToken >= static_cast<int>(nextHopInterfaceMatrix[nodeId].size()))
+                throw cRuntimeError("Invalid next-hop node %d for source node %d in %s",
+                                    nextHopToken, nodeId, fName.c_str());
+            nextHopId = nextHopInterfaceMatrix[nodeId][nextHopToken];
+            if (nextHopId <= 0)
+                throw cRuntimeError("Failed to resolve current interface for source node %d via next-hop node %d in %s",
+                                    nodeId, nextHopToken, fName.c_str());
         }
 
         ipv4Mod->addKNextHop(1, destAddr, nextHopId);
@@ -281,7 +336,11 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
     }
     std::ofstream fout;
     std::string fName = filePrefix + "/" + currentInterval.str() + ".bin";
-    fout.open(fName, std::ios::binary | std::ios::app);
+    fout.open(fName, std::ios::binary | std::ios::trunc);
+    const int32_t magic = ROUTE_FILE_MAGIC;
+    const int32_t version = ROUTE_FILE_VERSION;
+    fout.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
+    fout.write(reinterpret_cast<const char *>(&version), sizeof(version));
 
     for (int nodeNum = 0; nodeNum < numOfSats+numOfGS; nodeNum++) {
         LeoIpv4 *ipv4Mod = ipv4Modules[nodeNum];
@@ -382,7 +441,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                     srcIpv4Mod->addKNextHop(1, destinationNodeNum, nextHopID);
                     fout.write(reinterpret_cast<const char*>(&sourceNodeNum), sizeof(int32_t));
                     fout.write(reinterpret_cast<const char*>(&destinationNodeNum), sizeof(int32_t));
-                    fout.write(reinterpret_cast<const char*>(&nextHopID), sizeof(int32_t));
+                    fout.write(reinterpret_cast<const char*>(&nextHopNodeNum), sizeof(int32_t));
                 }
             }
             igraph_vector_int_destroy(path);
@@ -427,7 +486,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                             srcIpv4Mod->addKNextHop(i+1, destinationNodeNum, nextHopID);
                             fout.write(reinterpret_cast<const char*>(&sourceNodeNum), sizeof(int32_t));
                             fout.write(reinterpret_cast<const char*>(&destinationNodeNum), sizeof(int32_t));
-                            fout.write(reinterpret_cast<const char*>(&nextHopID), sizeof(int32_t));
+                            fout.write(reinterpret_cast<const char*>(&nextHopNodeNum), sizeof(int32_t));
                         }
                     }
                     igraph_vector_int_destroy(path);

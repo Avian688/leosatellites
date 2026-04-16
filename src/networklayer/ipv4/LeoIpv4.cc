@@ -16,6 +16,7 @@
 
 #include <algorithm>
 
+#include <inet/common/ModuleAccess.h>
 #include "../configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 
 namespace inet {
@@ -35,9 +36,8 @@ LeoIpv4::~LeoIpv4()
 void LeoIpv4::initialize(int stage)
 {
     Ipv4::initialize(stage);
-    if (stage == INITSTAGE_LOCAL) {
+    if (stage == INITSTAGE_LOCAL)
         configurator = dynamic_cast<LeoIpv4NetworkConfigurator *>(getParentModule()->getParentModule()->getParentModule()->getSubmodule("configurator"));
-    }
 }
 
 void LeoIpv4::setNodeId(int id)
@@ -105,21 +105,29 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
     const int currentNodeType = configurator->getNodeTypeCode(nodeId);
     const int destinationNodeType = configurator->getNodeTypeCode(modId);
     int interfaceID = (modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[modId] : 0;
+    const int baseInterfaceId = interfaceID;
+    int attachedNodeId = -1;
+    int routeToAttachedNodeInterfaceId = -1;
+    int endpointAttachmentInterfaceId = -1;
+    int currentEndpointUplinkInterfaceId = currentNodeType == 2 ? configurator->getEndpointUplinkInterfaceId(nodeId) : -1;
+    int destinationEndpointUplinkInterfaceId = destinationNodeType == 2 ? configurator->getEndpointUplinkInterfaceId(modId) : -1;
 
     if (destinationNodeType == 2 && modId >= 0) {
-        const int attachedNodeId = configurator->getGroundStationFromEndPoint(modId);
+        attachedNodeId = configurator->getGroundStationFromEndPoint(modId);
+        endpointAttachmentInterfaceId = configurator->getEndpointAttachmentInterfaceId(modId);
+        routeToAttachedNodeInterfaceId = (attachedNodeId >= 0 && attachedNodeId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[attachedNodeId] : 0;
         if (nodeId == attachedNodeId) {
-            interfaceID = configurator->getEndpointAttachmentInterfaceId(modId);
+            interfaceID = endpointAttachmentInterfaceId;
         }
         else if (currentNodeType == 2) {
-            interfaceID = configurator->getEndpointUplinkInterfaceId(nodeId);
+            interfaceID = currentEndpointUplinkInterfaceId;
         }
         else {
-            interfaceID = (attachedNodeId >= 0 && attachedNodeId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[attachedNodeId] : 0;
+            interfaceID = routeToAttachedNodeInterfaceId;
         }
     }
     else if (interfaceID <= 0 && currentNodeType == 2) {
-        interfaceID = configurator->getEndpointUplinkInterfaceId(nodeId);
+        interfaceID = currentEndpointUplinkInterfaceId;
     }
 
     if (interfaceID > 0) {
