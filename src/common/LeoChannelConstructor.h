@@ -112,6 +112,8 @@ protected:
     int selectServingSatelliteForUserTerminal(int userTerminalIndex);
     bool isGroundStationSatelliteReachableNow(int groundStationIndex, int satelliteIndex) const;
     bool isUserTerminalSatelliteReachableNow(int userTerminalIndex, int satelliteIndex) const;
+    simtime_t computeUserTerminalSatelliteRtt(int userTerminalIndex, int satelliteIndex) const;
+    simtime_t computeUserTerminalHandoverDowntime(int userTerminalIndex, int oldSatelliteIndex, int newSatelliteIndex) const;
     void createUserTerminalLink(int userTerminalIndex, int satNum);
     void removeUserTerminalLink(int userTerminalIndex, ActiveUserTerminalLink& link);
     void finalizeUserTerminalLinks();

@@ -26,5 +26,5 @@ simple LeoChannelConstructor
        string interfaceType = default("leosatellites.linklayer.ppp.PppInterfaceMutable"); //Required if you need different queues.
        double userTerminalUpdateInterval @unit(s) = default(15s);
        double userTerminalSampleInterval @unit(s) = default(1s);
-       double userTerminalHandoverDowntime @unit(s) = default(50ms);
+       double userTerminalHandoverDowntime @unit(s) = default(50ms); // Fallback if RTT-based handover downtime cannot be computed.
 }
