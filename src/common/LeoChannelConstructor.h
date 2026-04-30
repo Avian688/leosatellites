@@ -25,6 +25,8 @@
 
 namespace inet{
 
+class UserTerminalHandoverOracle;
+
 class INET_API LeoChannelConstructor: public cSimpleModule, public LifecycleController {
 public:
     LeoChannelConstructor();
@@ -72,6 +74,7 @@ protected:
     };
 
     LeoIpv4NetworkConfigurator* configurator;
+    UserTerminalHandoverOracle *handoverOracle;
 
     cMessage *startManagerNode;
     cMessage *updateTimer;
@@ -109,9 +112,16 @@ protected:
     void createGroundStationLink(int gsNum, int satNum);
     void removeGroundStationLink(int gsNum, int satNum, ActiveGroundStationLink& link);
     bool refreshUserTerminalLinks(bool forceUpdate);
+    void clearPendingUserTerminalHandovers();
+    void cancelPendingUserTerminalHandover(int userTerminalIndex);
+    void publishNextUserTerminalHandoverTime();
+    void markHardHandoverStarted(int userTerminalIndex, int oldSatelliteIndex, int newSatelliteIndex, simtime_t reconnectTime);
+    void markHardHandoverEnded(int userTerminalIndex);
     int selectServingSatelliteForUserTerminal(int userTerminalIndex);
+    int selectServingSatelliteForUserTerminalAt(int userTerminalIndex, simtime_t slotStart) const;
     bool isGroundStationSatelliteReachableNow(int groundStationIndex, int satelliteIndex) const;
     bool isUserTerminalSatelliteReachableNow(int userTerminalIndex, int satelliteIndex) const;
+    bool isUserTerminalSatelliteReachableAtTime(int userTerminalIndex, int satelliteIndex, simtime_t time) const;
     simtime_t computeUserTerminalSatelliteRtt(int userTerminalIndex, int satelliteIndex) const;
     simtime_t computeUserTerminalHandoverDowntime(int userTerminalIndex, int oldSatelliteIndex, int newSatelliteIndex) const;
     void createUserTerminalLink(int userTerminalIndex, int satNum);

@@ -18,6 +18,7 @@ import inet.common.geometry.common.OsgGeographicCoordinateSystem;
 import inet.environment.objectcache.GridObjectCache;
 
 import leosatellites.common.LeoChannelConstructor;
+import leosatellites.common.UserTerminalHandoverOracle;
 //
 // Network SatSGP4 enables satellite movement on worldmap. This is the primary satellite network that
 // is testing throughout the project by Aiden Valentine. The network has been largely adpated from the
@@ -37,6 +38,7 @@ network SatSGP4
         int satsPerPlane;
         int numOfPlanes;
         bool enableInterSatelliteLinks = default(true);
+        bool enableHandoverOracle = default(false);
         
         @display("bgi=background_earth,s;bgb=2160,1080");
         //@statistic[rtt](source=count(GS[0].app[0].rtt); record=figure; targetFigure=rttCounter; checkSignals=false);
@@ -62,6 +64,9 @@ network SatSGP4
         userTerminal[numOfUserTerminals]: UserTerminal {
             parameters:
                 @display("p=238.04,360.0;r=10;i=device/laptop");
+        }
+        handoverOracle: UserTerminalHandoverOracle if enableHandoverOracle {
+            @display("p=520,601;i=block/table");
         }
         channelConstructor: LeoChannelConstructor  {
         	@display("p=704.06,601.0725;i=abstract/person,#17FF39;b=,,rect;is=vl;t=Channel Constructor");
