@@ -138,43 +138,42 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 {
     std::string fName = configLocation + filePrefix + "/" + currentInterval.str() + ".bin";
 
-    if (!std::filesystem::is_regular_file(fName))
-        return false;
-
     std::ifstream file(fName, std::ios::in | std::ios::binary);
     if (!file.is_open())
         return false;
 
-    const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS), static_cast<int>(nodeModules.size()));
-    for (int nodeId = 0; nodeId < routableNodeCount; nodeId++) {
-        LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
-        if (ipv4Mod == nullptr) {
-            cModule *nodeMod = nodeModules[nodeId];
-            ipv4Mod = nodeMod != nullptr ? dynamic_cast<LeoIpv4 *>(nodeMod->getModuleByPath(".ipv4.ip")) : nullptr;
-            ipv4Modules[nodeId] = ipv4Mod;
-        }
-        if (ipv4Mod != nullptr)
-            ipv4Mod->clearNextHops();
-    }
+    file.seekg(0, std::ios::end);
+    const std::streamoff fileSize = file.tellg();
+    if (fileSize <= 0)
+        return false;
+    if (fileSize % static_cast<std::streamoff>(sizeof(int32_t)) != 0)
+        throw cRuntimeError("Route file size is not 32-bit aligned: %s", fName.c_str());
 
-    int32_t firstValue = 0;
-    file.read(reinterpret_cast<char *>(&firstValue), sizeof(firstValue));
+    routeFileWords.resize(static_cast<size_t>(fileSize / sizeof(int32_t)));
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char *>(routeFileWords.data()), static_cast<std::streamsize>(fileSize));
     if (file.fail())
         return false;
 
+    if (hasAppliedRouteSnapshot &&
+        appliedNextHopInterfaceGeneration == nextHopInterfaceGeneration &&
+        previouslyAppliedRouteFileWords == routeFileWords)
+        return true;
+
+    size_t recordOffset = 0;
+    const int32_t firstValue = routeFileWords.front();
+
     bool usesStableNextHopNodeFormat = false;
     if (firstValue == ROUTE_FILE_MAGIC) {
-        int32_t version = 0;
-        file.read(reinterpret_cast<char *>(&version), sizeof(version));
-        if (file.fail())
+        if (routeFileWords.size() < 2)
             return false;
+        const int32_t version = routeFileWords[1];
         if (version != ROUTE_FILE_VERSION)
             throw cRuntimeError("Unsupported route file version %d in %s", version, fName.c_str());
         usesStableNextHopNodeFormat = true;
+        recordOffset = 2;
     }
     else {
-        file.clear();
-        file.seekg(0, std::ios::beg);
         if (numOfUserTerminals > 0) {
             throw cRuntimeError("Legacy route file format detected in %s while user terminals are enabled. "
                                 "These files store raw interface IDs and must be regenerated with the patched save run.",
@@ -182,30 +181,31 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
         }
     }
 
-    while (true) {
-        int nodeId;
-        int destAddr;
-        int nextHopToken;
+    if ((routeFileWords.size() - recordOffset) % 3 != 0)
+        throw cRuntimeError("Route file contains an incomplete record: %s", fName.c_str());
 
-        // Read a record: 3 integers
-        file.read(reinterpret_cast<char*>(&nodeId), sizeof(int));
-        file.read(reinterpret_cast<char*>(&destAddr), sizeof(int));
-        file.read(reinterpret_cast<char*>(&nextHopToken), sizeof(int));
+    const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS), static_cast<int>(nodeModules.size()));
+    const size_t routeTableSize = nodeModules.size();
+    decodedPrimaryNextHopInterfaces.resize(routableNodeCount);
+    for (auto& routes : decodedPrimaryNextHopInterfaces) {
+        if (routes.size() != routeTableSize)
+            routes.assign(routeTableSize, 0);
+        else
+            std::fill(routes.begin(), routes.end(), 0);
+    }
 
-        if (file.eof() || file.fail())
-            break;
+    for (size_t offset = recordOffset; offset < routeFileWords.size(); offset += 3) {
+        const int nodeId = routeFileWords[offset];
+        const int destAddr = routeFileWords[offset + 1];
+        const int nextHopToken = routeFileWords[offset + 2];
 
         if (nodeId < 0 || nodeId >= static_cast<int>(ipv4Modules.size()))
             continue;
-
-        LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
-        if (ipv4Mod == nullptr) {
-            cModule *nodeMod = nodeModules[nodeId];
-            ipv4Mod = dynamic_cast<LeoIpv4*>(nodeMod->getModuleByPath(".ipv4.ip"));
-            if (!ipv4Mod)
-                continue;
-            ipv4Modules[nodeId] = ipv4Mod;
-        }
+        if (nodeId >= routableNodeCount)
+            continue;
+        if (destAddr < 0 || destAddr >= static_cast<int>(routeTableSize))
+            throw cRuntimeError("Invalid destination node %d for source node %d in %s",
+                                destAddr, nodeId, fName.c_str());
 
         int nextHopId = nextHopToken;
         if (usesStableNextHopNodeFormat) {
@@ -218,10 +218,27 @@ bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
                                     nodeId, nextHopToken, fName.c_str());
         }
 
-        ipv4Mod->addKNextHop(1, destAddr, nextHopId);
-        ipv4Mod->addNextHop(destAddr, nextHopId);
+        // Assignment order matches the old loader, so a repeated source and
+        // destination record still uses the last entry in the snapshot.
+        decodedPrimaryNextHopInterfaces[nodeId][destAddr] = nextHopId;
     }
-    file.close();
+
+    // No live route changes until the complete snapshot has been read,
+    // validated, and resolved against the current interface mapping.
+    for (int nodeId = 0; nodeId < routableNodeCount; nodeId++) {
+        LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
+        if (ipv4Mod == nullptr) {
+            cModule *nodeMod = nodeModules[nodeId];
+            ipv4Mod = nodeMod != nullptr ? dynamic_cast<LeoIpv4 *>(nodeMod->getModuleByPath(".ipv4.ip")) : nullptr;
+            ipv4Modules[nodeId] = ipv4Mod;
+        }
+        if (ipv4Mod != nullptr)
+            ipv4Mod->replacePrimaryNextHopInterfaces(decodedPrimaryNextHopInterfaces[nodeId]);
+    }
+
+    previouslyAppliedRouteFileWords.swap(routeFileWords);
+    appliedNextHopInterfaceGeneration = nextHopInterfaceGeneration;
+    hasAppliedRouteSnapshot = true;
     return true;
 }
 
@@ -514,7 +531,11 @@ void LeoIpv4NetworkConfigurator::addNextHopInterface(cModule* source, cModule* d
     auto destinationIt = moduleGraphIdByModule.find(destination);
     if (sourceIt == moduleGraphIdByModule.end() || destinationIt == moduleGraphIdByModule.end())
         return;
-    nextHopInterfaceMatrix[sourceIt->second][destinationIt->second] = interfaceID;
+    int& currentInterfaceID = nextHopInterfaceMatrix[sourceIt->second][destinationIt->second];
+    if (currentInterfaceID != interfaceID) {
+        currentInterfaceID = interfaceID;
+        nextHopInterfaceGeneration++;
+    }
 }
 
 void LeoIpv4NetworkConfigurator::removeNextHopInterface(cModule* source, cModule* destination)
@@ -523,7 +544,11 @@ void LeoIpv4NetworkConfigurator::removeNextHopInterface(cModule* source, cModule
     auto destinationIt = moduleGraphIdByModule.find(destination);
     if (sourceIt == moduleGraphIdByModule.end() || destinationIt == moduleGraphIdByModule.end())
         return;
-    nextHopInterfaceMatrix[sourceIt->second][destinationIt->second] = -1;
+    int& currentInterfaceID = nextHopInterfaceMatrix[sourceIt->second][destinationIt->second];
+    if (currentInterfaceID != -1) {
+        currentInterfaceID = -1;
+        nextHopInterfaceGeneration++;
+    }
 }
 
 void LeoIpv4NetworkConfigurator::addGSLinktoTopologyGraph(int sourceNum, int destNum, double weight)
@@ -769,6 +794,7 @@ void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
             }
         }
     }
+    nextHopInterfaceGeneration++;
 }
 
 double LeoIpv4NetworkConfigurator::computeLinkWeight(Link *link, const char *metric, cXMLElement *parameters)

@@ -41,6 +41,7 @@ public:
     void addKNextHop(int k, int destinationNode, int nextInterfaceID);
     void addNextHop(uint32_t destinationAddr, uint32_t nextInterfaceID);
     void clearNextHops();
+    void replacePrimaryNextHopInterfaces(std::vector<int>& nextInterfaces);
     LeoIpv4();
     virtual ~LeoIpv4();
 

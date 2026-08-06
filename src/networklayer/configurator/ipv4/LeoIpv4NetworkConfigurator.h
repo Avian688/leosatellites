@@ -17,6 +17,7 @@
 #define NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_
 
 #include <algorithm>
+#include <cstdint>
 #include <igraph.h>
 #include <queue>
 #include <tuple>
@@ -57,6 +58,12 @@ protected:
     bool loadFiles;
     std::vector<cModule*> nodeModules;
     std::vector<LeoIpv4*> ipv4Modules;
+    std::vector<std::vector<int>> decodedPrimaryNextHopInterfaces;
+    std::vector<std::int32_t> routeFileWords;
+    std::vector<std::int32_t> previouslyAppliedRouteFileWords;
+    std::uint64_t nextHopInterfaceGeneration = 0;
+    std::uint64_t appliedNextHopInterfaceGeneration = 0;
+    bool hasAppliedRouteSnapshot = false;
     std::unordered_map<cModule*, int> moduleGraphIdByModule;
 
     std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;

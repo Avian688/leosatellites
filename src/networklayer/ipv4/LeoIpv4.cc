@@ -67,6 +67,15 @@ void LeoIpv4::clearNextHops(){
     std::fill(primaryNextHopInterfaces.begin(), primaryNextHopInterfaces.end(), 0);
 }
 
+void LeoIpv4::replacePrimaryNextHopInterfaces(std::vector<int>& nextInterfaces)
+{
+    // The active forwarding path uses this dense table. Swapping also lets the
+    // configurator reuse the previous table's allocation on the next update.
+    primaryNextHopInterfaces.swap(nextInterfaces);
+    nextHops.clear();
+    kNextHops.clear();
+}
+
 void LeoIpv4::routeUnicastPacket(Packet *packet)
 {
     //std::cout << "Routing Unicast Packet: " << packet->str() << endl;
