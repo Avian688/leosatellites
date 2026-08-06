@@ -36,11 +36,15 @@ cOrbitA::cOrbitA(std::string satNameA, int epochY, double epochD, double altitud
    bstar = bstarA;
    drag = dragA;
    //int offsetVal = planes; //offsetVal must be changed according to constellation, used to prevent collisions
-   int currentPlane = trunc(satIndex/satPerPlane);
-   int planeIndex = (satIndex % (planes*satPerPlane))-(satPerPlane*currentPlane); //index of a satellite within a plane
-   raan = ((360.0/planes)*currentPlane) * RADS_PER_DEG; //RAAN value, uniformly created so that there are equally spaced orbital planes for even coverage.
-   double phaseOffsetVal = ((360.0 / satPerPlane) * (static_cast<double>(phaseOffset) / planes)) * currentPlane;
-   meanAnomaly = (((360.0/satPerPlane)*planeIndex))*RADS_PER_DEG; //Denotes the position of a satellite within its plane.
+   const int satelliteCount = satPerPlane * planes;
+   const int currentPlane = satIndex / satPerPlane;
+   const int planeIndex = satIndex % satPerPlane; //index of a satellite within a plane
+
+   const double phaseOffsetVal = static_cast<double>(currentPlane * phaseOffset * 360) / static_cast<double>(satelliteCount);
+
+   raan = 360.0 / planes * currentPlane * RADS_PER_DEG; //RAAN value, uniformly created so that there are equally spaced orbital planes for even coverage.
+
+   meanAnomaly = (360.0 / satPerPlane * planeIndex + phaseOffsetVal) * RADS_PER_DEG; //Denotes the position of a satellite within its plane.
 
    m_jdEpoch = cJulian(epochYear, epochDay);
 
