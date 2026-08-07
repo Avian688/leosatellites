@@ -76,6 +76,15 @@ void LeoIpv4::replacePrimaryNextHopInterfaces(std::vector<int>& nextInterfaces)
     kNextHops.clear();
 }
 
+void LeoIpv4::setPrimaryNextHopInterface(int destinationNode, int nextInterfaceID)
+{
+    if (destinationNode < 0)
+        throw cRuntimeError("Negative destination node in primary next-hop update: %d", destinationNode);
+    if (destinationNode >= static_cast<int>(primaryNextHopInterfaces.size()))
+        primaryNextHopInterfaces.resize(destinationNode + 1, 0);
+    primaryNextHopInterfaces[destinationNode] = nextInterfaceID;
+}
+
 void LeoIpv4::routeUnicastPacket(Packet *packet)
 {
     //std::cout << "Routing Unicast Packet: " << packet->str() << endl;

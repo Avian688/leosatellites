@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <filesystem>
 #include <igraph.h>
 #include <queue>
 #include <tuple>
@@ -29,6 +30,7 @@
 
 #include "../../ipv4/LeoIpv4.h"
 #include "../../ipv4/LeoIpv4RoutingTable.h"
+#include "LeoRouteSnapshot.h"
 #include "../../../mobility/SatelliteMobility.h"
 #include "../../../mobility/GroundStationMobility.h"
 
@@ -41,6 +43,7 @@ protected:
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }
     virtual void handleMessage(cMessage *msg) override { throw cRuntimeError("this module doesn't handle messages, it runs only in initialize()"); }
     virtual void initialize(int stage) override;
+    virtual void finish() override;
 
     virtual double computeLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
     virtual double computeWiredLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
@@ -58,16 +61,21 @@ protected:
     bool loadFiles;
     std::vector<cModule*> nodeModules;
     std::vector<LeoIpv4*> ipv4Modules;
-    std::vector<std::vector<int>> decodedPrimaryNextHopInterfaces;
-    std::vector<std::int32_t> routeFileWords;
-    std::vector<std::int32_t> previouslyAppliedRouteFileWords;
-    std::uint64_t nextHopInterfaceGeneration = 0;
-    std::uint64_t appliedNextHopInterfaceGeneration = 0;
-    bool hasAppliedRouteSnapshot = false;
+    leoRouting::StableRouteState stableRouteState;
+    leoRouting::StableRouteState generatedRouteState;
+    leoRouting::NextHopInterfaceTable nextHopInterfaces;
+    bool hasGeneratedRouteSnapshot = false;
+    bool allowRouteSnapshotOverwrite = false;
+    bool logRouteSnapshotStats = false;
+    std::uint64_t routeSnapshotFilesRead = 0;
+    std::uint64_t routeSnapshotBytesRead = 0;
+    std::uint64_t routeRecordsDecoded = 0;
+    std::uint64_t routeOperationsApplied = 0;
+    std::uint64_t routeSourceRowsRebuilt = 0;
+    std::uint64_t routeEntriesResolved = 0;
     std::unordered_map<cModule*, int> moduleGraphIdByModule;
 
     std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;
-    std::vector<std::vector<int>> nextHopInterfaceMatrix;
     std::string networkName;
     std::string configLocation;
     std::string filePrefix;
@@ -81,6 +89,13 @@ protected:
     const char* linkMetric;
     std::queue<std::tuple<int, int, double>> groundStationLinks;
     int numOfKPaths;
+
+    std::filesystem::path getRoutingDirectory() const;
+    LeoIpv4 *getIpv4Module(int nodeId);
+    void applyFullRouteState(leoRouting::StableRouteState&& candidateState);
+    void applyDeltaRouteState(const leoRouting::ParsedSnapshot& snapshot);
+    void writeGeneratedRouteSnapshot(const leoRouting::StableRouteState& currentState,
+                                     simtime_t currentInterval);
 
     simtime_t currentInterval;
     igraph_vector_int_t islVec;

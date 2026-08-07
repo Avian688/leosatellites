@@ -24,6 +24,8 @@ simple LeoIpv4NetworkConfigurator extends L3NetworkConfiguratorBase
         @display("i=block/cogwheel");
         int numOfKPaths = default(1);
         bool loadFiles = default (true);
+        bool allowRouteSnapshotOverwrite = default(false); // Explicit opt-in for regenerating an existing snapshot path
+        bool logRouteSnapshotStats = default(false); // Print/read counters for focused benchmarks
         
-        string configLocation = default (""); //Current Folder
+        string configLocation = default (""); // Routing corpus root; constellation folder and timestamp names are unchanged
 }

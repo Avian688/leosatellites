@@ -72,6 +72,8 @@ out/
 .cmdenv-log
 netanim-trace.txt
 *.out
+/tests/route_snapshots/RouteSnapshotTests
+/tools/route_snapshots/leo_route_snapshot_tool
 
 # ignore backup and temp files
 *.UPDATED

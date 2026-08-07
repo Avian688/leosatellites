@@ -16,17 +16,11 @@
 #include <sstream>
 #include<iostream>
 #include <filesystem>
+#include <stdexcept>
 #include "LeoIpv4NetworkConfigurator.h"
 
 namespace inet {
 Define_Module(LeoIpv4NetworkConfigurator);
-
-namespace {
-
-constexpr int32_t ROUTE_FILE_MAGIC = 0x4c454f32;   // "LEO2"
-constexpr int32_t ROUTE_FILE_VERSION = 2;
-
-}
 
 static void silent_warning_handler(const char *reason, const char *file, int line) {
     // Silence all warnings as the console will be filled with warnings if a ground station cannot connect to a satellite
@@ -41,8 +35,21 @@ LeoIpv4NetworkConfigurator::~LeoIpv4NetworkConfigurator()
 {
     nodeModules.clear();
     ipv4Modules.clear();
-    nextHopInterfaceMatrix.clear();
     igraph_vector_int_destroy(&islVec);
+}
+
+void LeoIpv4NetworkConfigurator::finish()
+{
+    if (!logRouteSnapshotStats)
+        return;
+    std::cout << "LEO_ROUTE_STATS"
+              << " filesRead=" << routeSnapshotFilesRead
+              << " bytesRead=" << routeSnapshotBytesRead
+              << " recordsDecoded=" << routeRecordsDecoded
+              << " operationsApplied=" << routeOperationsApplied
+              << " sourceRowsRebuilt=" << routeSourceRowsRebuilt
+              << " entriesResolved=" << routeEntriesResolved
+              << std::endl;
 }
 
 void LeoIpv4NetworkConfigurator::initialize(int stage)
@@ -57,6 +64,8 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         // Read module and configuration parameters
         networkName = parent->getName();
         loadFiles = par("loadFiles");
+        allowRouteSnapshotOverwrite = par("allowRouteSnapshotOverwrite");
+        logRouteSnapshotStats = par("logRouteSnapshotStats");
         minLinkWeight = par("minLinkWeight");
         configureIsolatedNetworksSeparatly = par("configureIsolatedNetworksSeparatly").boolValue();
 
@@ -78,7 +87,8 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         // Assign unique IDs to modules (custom method)
         assignIDtoModules();
         ipv4Modules.resize(nodeModules.size(), nullptr);
-        nextHopInterfaceMatrix.assign(nodeModules.size(), std::vector<int>(nodeModules.size(), -1));
+        const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS), static_cast<int>(nodeModules.size()));
+        nextHopInterfaces.reset(routableNodeCount, nodeModules.size());
 
         // Path calculation parameters
         numOfKPaths = par("numOfKPaths");
@@ -110,22 +120,9 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         // Compose the file prefix using underscores as separators
         filePrefix = std::to_string(numOfSats) + "_" + altitudeStr + "_" + std::to_string(planes) + "_" + std::to_string(satPerPlane) + "_" + inclinationStr + "_" + std::to_string(numOfGS) + topologyTag;
 
-        if(!loadFiles){
-            try {
-                if (std::filesystem::exists(filePrefix) && std::filesystem::is_directory(filePrefix)) {
-                    std::filesystem::remove_all(filePrefix); // This deletes the folder and all its contents
-                    std::cout << "Deleted folder: " << filePrefix << std::endl;
-                } else {
-                    std::cout << "Folder does not exist: " << filePrefix << std::endl;
-                }
-            } catch (const std::filesystem::filesystem_error& e) {
-                std::cerr << "Filesystem error: " << e.what() << std::endl;
-            }
-        }
-
-        writeModuleIDMappingsToFile(configLocation + filePrefix + "/idMap.txt");
-
-        verifyModuleIDMappingsFromFile(configLocation + filePrefix + "/idMap.txt");
+        // Saving no longer removes an existing corpus. Each snapshot is
+        // published atomically, and overwrite requires an explicit opt-in.
+        writeModuleIDMappingsToFile((getRoutingDirectory() / "idMap.txt").string());
 
         updateModuleIDMappingsClientServer();
 
@@ -134,112 +131,142 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 }
 
 
+std::filesystem::path LeoIpv4NetworkConfigurator::getRoutingDirectory() const
+{
+    const std::filesystem::path root(configLocation);
+    return root.empty() ? std::filesystem::path(filePrefix) : root / filePrefix;
+}
+
+LeoIpv4 *LeoIpv4NetworkConfigurator::getIpv4Module(int nodeId)
+{
+    if (nodeId < 0 || nodeId >= static_cast<int>(ipv4Modules.size()))
+        return nullptr;
+    LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
+    if (ipv4Mod == nullptr) {
+        cModule *nodeMod = nodeModules[nodeId];
+        ipv4Mod = nodeMod != nullptr ? dynamic_cast<LeoIpv4 *>(nodeMod->getModuleByPath(".ipv4.ip")) : nullptr;
+        ipv4Modules[nodeId] = ipv4Mod;
+    }
+    return ipv4Mod;
+}
+
+void LeoIpv4NetworkConfigurator::applyFullRouteState(leoRouting::StableRouteState&& candidateState)
+{
+    std::vector<std::vector<int>> resolvedRows(candidateState.sourceCount());
+    for (int source = 0; source < candidateState.sourceCount(); ++source)
+        resolvedRows[source] = leoRouting::resolveSourceRow(candidateState, nextHopInterfaces, source, nodeModules.size());
+
+    // All records and interfaces have been validated before forwarding changes.
+    for (int source = 0; source < candidateState.sourceCount(); ++source) {
+        LeoIpv4 *ipv4Mod = getIpv4Module(source);
+        if (ipv4Mod != nullptr)
+            ipv4Mod->replacePrimaryNextHopInterfaces(resolvedRows[source]);
+    }
+
+    routeOperationsApplied += candidateState.routeCount();
+    routeSourceRowsRebuilt += candidateState.sourceCount();
+    routeEntriesResolved += candidateState.routeCount();
+    stableRouteState = std::move(candidateState);
+    nextHopInterfaces.clearAllDirty();
+}
+
+void LeoIpv4NetworkConfigurator::applyDeltaRouteState(const leoRouting::ParsedSnapshot& snapshot)
+{
+    const leoRouting::DeltaPreview preview = stableRouteState.validateDelta(snapshot);
+
+    // The complete delta is structurally and semantically valid at this point.
+    // Updating stable state is still separate from the live forwarding commit.
+    stableRouteState.applyValidatedDelta(snapshot, preview);
+
+    const std::vector<int32_t> dirtySources = nextHopInterfaces.dirtySources();
+    std::vector<uint8_t> rebuildSource(stableRouteState.sourceCount(), 0);
+    std::vector<std::pair<int32_t, std::vector<int>>> resolvedRows;
+    resolvedRows.reserve(dirtySources.size());
+    for (int32_t source : dirtySources) {
+        rebuildSource[source] = 1;
+        resolvedRows.emplace_back(source,
+            leoRouting::resolveSourceRow(stableRouteState, nextHopInterfaces, source, nodeModules.size()));
+        const auto rowBegin = stableRouteState.rawRoutes().begin() +
+                              static_cast<size_t>(source) * stableRouteState.destinationCount();
+        routeEntriesResolved += std::count_if(rowBegin, rowBegin + stableRouteState.destinationCount(),
+                                              [](int32_t value) { return value != leoRouting::DELETE_NEXT_HOP; });
+    }
+
+    struct ResolvedChange {
+        int32_t source;
+        int32_t destination;
+        int interfaceId;
+    };
+    std::vector<ResolvedChange> resolvedChanges;
+    resolvedChanges.reserve(snapshot.records.size());
+    for (const leoRouting::RouteRecord& record : snapshot.records) {
+        if (rebuildSource[record.source])
+            continue;
+        const int interfaceId = leoRouting::resolveRoute(stableRouteState, nextHopInterfaces,
+                                                         record.source, record.destination);
+        resolvedChanges.push_back({record.source, record.destination, interfaceId});
+        if (record.nextHop != leoRouting::DELETE_NEXT_HOP)
+            routeEntriesResolved++;
+    }
+
+    // Resolution above may throw, so no live row is modified before every
+    // affected route has a valid current interface.
+    for (auto& [source, row] : resolvedRows) {
+        LeoIpv4 *ipv4Mod = getIpv4Module(source);
+        if (ipv4Mod != nullptr)
+            ipv4Mod->replacePrimaryNextHopInterfaces(row);
+        nextHopInterfaces.clearDirty(source);
+    }
+    for (const ResolvedChange& change : resolvedChanges) {
+        LeoIpv4 *ipv4Mod = getIpv4Module(change.source);
+        if (ipv4Mod != nullptr)
+            ipv4Mod->setPrimaryNextHopInterface(change.destination, change.interfaceId);
+    }
+
+    routeOperationsApplied += snapshot.records.size();
+    routeSourceRowsRebuilt += resolvedRows.size();
+}
+
 bool LeoIpv4NetworkConfigurator::loadConfiguration(simtime_t currentInterval)
 {
-    std::string fName = configLocation + filePrefix + "/" + currentInterval.str() + ".bin";
-
-    std::ifstream file(fName, std::ios::in | std::ios::binary);
-    if (!file.is_open())
+    const std::filesystem::path filePath = getRoutingDirectory() / (currentInterval.str() + ".bin");
+    if (!std::filesystem::exists(filePath)) {
+        if (stableRouteState.hasSequenceMetadata())
+            throw cRuntimeError("Missing routing delta after sequence %d: %s",
+                                stableRouteState.sequence(), filePath.string().c_str());
         return false;
+    }
 
-    file.seekg(0, std::ios::end);
-    const std::streamoff fileSize = file.tellg();
-    if (fileSize <= 0)
-        return false;
-    if (fileSize % static_cast<std::streamoff>(sizeof(int32_t)) != 0)
-        throw cRuntimeError("Route file size is not 32-bit aligned: %s", fName.c_str());
+    try {
+        const leoRouting::ParsedSnapshot snapshot = leoRouting::readSnapshot(filePath);
+        routeSnapshotFilesRead++;
+        routeSnapshotBytesRead += snapshot.bytesRead;
+        routeRecordsDecoded += snapshot.records.size();
 
-    routeFileWords.resize(static_cast<size_t>(fileSize / sizeof(int32_t)));
-    file.seekg(0, std::ios::beg);
-    file.read(reinterpret_cast<char *>(routeFileWords.data()), static_cast<std::streamsize>(fileSize));
-    if (file.fail())
-        return false;
-
-    if (hasAppliedRouteSnapshot &&
-        appliedNextHopInterfaceGeneration == nextHopInterfaceGeneration &&
-        previouslyAppliedRouteFileWords == routeFileWords)
+        const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS),
+                                               static_cast<int>(nodeModules.size()));
+        if (snapshot.format == leoRouting::SnapshotFormat::V3 &&
+            snapshot.header.kind == leoRouting::SnapshotKind::Base &&
+            stableRouteState.hasSequenceMetadata()) {
+            throw std::runtime_error("Unexpected LEO3 base snapshot after loaded sequence " +
+                                     std::to_string(stableRouteState.sequence()));
+        }
+        if (snapshot.format == leoRouting::SnapshotFormat::V2Full ||
+            snapshot.header.kind == leoRouting::SnapshotKind::Base) {
+            leoRouting::FullDecodeStats decodeStats;
+            leoRouting::StableRouteState candidate = leoRouting::StableRouteState::fromFullSnapshot(
+                snapshot, routableNodeCount, routableNodeCount, &decodeStats);
+            applyFullRouteState(std::move(candidate));
+        }
+        else {
+            applyDeltaRouteState(snapshot);
+        }
         return true;
-
-    size_t recordOffset = 0;
-    const int32_t firstValue = routeFileWords.front();
-
-    bool usesStableNextHopNodeFormat = false;
-    if (firstValue == ROUTE_FILE_MAGIC) {
-        if (routeFileWords.size() < 2)
-            return false;
-        const int32_t version = routeFileWords[1];
-        if (version != ROUTE_FILE_VERSION)
-            throw cRuntimeError("Unsupported route file version %d in %s", version, fName.c_str());
-        usesStableNextHopNodeFormat = true;
-        recordOffset = 2;
     }
-    else {
-        if (numOfUserTerminals > 0) {
-            throw cRuntimeError("Legacy route file format detected in %s while user terminals are enabled. "
-                                "These files store raw interface IDs and must be regenerated with the patched save run.",
-                                fName.c_str());
-        }
+    catch (const std::exception& error) {
+        throw cRuntimeError("Failed to load routing snapshot %s: %s",
+                            filePath.string().c_str(), error.what());
     }
-
-    if ((routeFileWords.size() - recordOffset) % 3 != 0)
-        throw cRuntimeError("Route file contains an incomplete record: %s", fName.c_str());
-
-    const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS), static_cast<int>(nodeModules.size()));
-    const size_t routeTableSize = nodeModules.size();
-    decodedPrimaryNextHopInterfaces.resize(routableNodeCount);
-    for (auto& routes : decodedPrimaryNextHopInterfaces) {
-        if (routes.size() != routeTableSize)
-            routes.assign(routeTableSize, 0);
-        else
-            std::fill(routes.begin(), routes.end(), 0);
-    }
-
-    for (size_t offset = recordOffset; offset < routeFileWords.size(); offset += 3) {
-        const int nodeId = routeFileWords[offset];
-        const int destAddr = routeFileWords[offset + 1];
-        const int nextHopToken = routeFileWords[offset + 2];
-
-        if (nodeId < 0 || nodeId >= static_cast<int>(ipv4Modules.size()))
-            continue;
-        if (nodeId >= routableNodeCount)
-            continue;
-        if (destAddr < 0 || destAddr >= static_cast<int>(routeTableSize))
-            throw cRuntimeError("Invalid destination node %d for source node %d in %s",
-                                destAddr, nodeId, fName.c_str());
-
-        int nextHopId = nextHopToken;
-        if (usesStableNextHopNodeFormat) {
-            if (nextHopToken < 0 || nextHopToken >= static_cast<int>(nextHopInterfaceMatrix[nodeId].size()))
-                throw cRuntimeError("Invalid next-hop node %d for source node %d in %s",
-                                    nextHopToken, nodeId, fName.c_str());
-            nextHopId = nextHopInterfaceMatrix[nodeId][nextHopToken];
-            if (nextHopId <= 0)
-                throw cRuntimeError("Failed to resolve current interface for source node %d via next-hop node %d in %s",
-                                    nodeId, nextHopToken, fName.c_str());
-        }
-
-        // Assignment order matches the old loader, so a repeated source and
-        // destination record still uses the last entry in the snapshot.
-        decodedPrimaryNextHopInterfaces[nodeId][destAddr] = nextHopId;
-    }
-
-    // No live route changes until the complete snapshot has been read,
-    // validated, and resolved against the current interface mapping.
-    for (int nodeId = 0; nodeId < routableNodeCount; nodeId++) {
-        LeoIpv4 *ipv4Mod = ipv4Modules[nodeId];
-        if (ipv4Mod == nullptr) {
-            cModule *nodeMod = nodeModules[nodeId];
-            ipv4Mod = nodeMod != nullptr ? dynamic_cast<LeoIpv4 *>(nodeMod->getModuleByPath(".ipv4.ip")) : nullptr;
-            ipv4Modules[nodeId] = ipv4Mod;
-        }
-        if (ipv4Mod != nullptr)
-            ipv4Mod->replacePrimaryNextHopInterfaces(decodedPrimaryNextHopInterfaces[nodeId]);
-    }
-
-    previouslyAppliedRouteFileWords.swap(routeFileWords);
-    appliedNextHopInterfaceGeneration = nextHopInterfaceGeneration;
-    hasAppliedRouteSnapshot = true;
-    return true;
 }
 
 void LeoIpv4NetworkConfigurator::assignIDtoModules()
@@ -348,16 +375,9 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
 
 void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval)
 {
-    if (!std::filesystem::is_directory(filePrefix) || !std::filesystem::exists(filePrefix)) {
-        std::filesystem::create_directory(filePrefix);
-    }
-    std::ofstream fout;
-    std::string fName = filePrefix + "/" + currentInterval.str() + ".bin";
-    fout.open(fName, std::ios::binary | std::ios::trunc);
-    const int32_t magic = ROUTE_FILE_MAGIC;
-    const int32_t version = ROUTE_FILE_VERSION;
-    fout.write(reinterpret_cast<const char *>(&magic), sizeof(magic));
-    fout.write(reinterpret_cast<const char *>(&version), sizeof(version));
+    const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS),
+                                           static_cast<int>(nodeModules.size()));
+    leoRouting::StableRouteState currentRouteState(routableNodeCount, routableNodeCount);
 
     for (int nodeNum = 0; nodeNum < numOfSats+numOfGS; nodeNum++) {
         LeoIpv4 *ipv4Mod = ipv4Modules[nodeNum];
@@ -435,7 +455,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                 int nextHopNodeNum = igraph_vector_int_get(path, 1);
                 int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path)-1);
                 if(sourceNodeNum != destinationNodeNum){
-                    int nextHopID = nextHopInterfaceMatrix[sourceNodeNum][nextHopNodeNum];
+                    int nextHopID = nextHopInterfaces.get(sourceNodeNum, nextHopNodeNum);
 //                    IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
 //                    int totalInterfaces = 0;
 //                    for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
@@ -456,9 +476,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
 //                        }
 //                    }
                     srcIpv4Mod->addKNextHop(1, destinationNodeNum, nextHopID);
-                    fout.write(reinterpret_cast<const char*>(&sourceNodeNum), sizeof(int32_t));
-                    fout.write(reinterpret_cast<const char*>(&destinationNodeNum), sizeof(int32_t));
-                    fout.write(reinterpret_cast<const char*>(&nextHopNodeNum), sizeof(int32_t));
+                    currentRouteState.setRoute(sourceNodeNum, destinationNodeNum, nextHopNodeNum);
                 }
             }
             igraph_vector_int_destroy(path);
@@ -484,7 +502,7 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
                         int nextHopNodeNum = igraph_vector_int_get(path, 1);
                         int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path)-1);
                         if(sourceNodeNum != destinationNodeNum){
-                            int nextHopID = nextHopInterfaceMatrix[sourceNodeNum][nextHopNodeNum];
+                            int nextHopID = nextHopInterfaces.get(sourceNodeNum, nextHopNodeNum);
 //                            IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
 //                            for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
 //                                NetworkInterface *destinationIE = destIft->getInterface(j);
@@ -501,9 +519,9 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
 //                                }
 //                            }
                             srcIpv4Mod->addKNextHop(i+1, destinationNodeNum, nextHopID);
-                            fout.write(reinterpret_cast<const char*>(&sourceNodeNum), sizeof(int32_t));
-                            fout.write(reinterpret_cast<const char*>(&destinationNodeNum), sizeof(int32_t));
-                            fout.write(reinterpret_cast<const char*>(&nextHopNodeNum), sizeof(int32_t));
+                            // Canonical stable state preserves the old writer/loader's
+                            // last-record-wins behavior for equal-cost duplicates.
+                            currentRouteState.setRoute(sourceNodeNum, destinationNodeNum, nextHopNodeNum);
                         }
                     }
                     igraph_vector_int_destroy(path);
@@ -522,7 +540,32 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
     igraph_vector_destroy(&weightsVec);
     igraph_vector_int_destroy(&shortestPathVertexVec);
     igraph_vector_int_destroy(&shortestPathEdgesVec);
-    fout.close();
+    writeGeneratedRouteSnapshot(currentRouteState, currentInterval);
+}
+
+void LeoIpv4NetworkConfigurator::writeGeneratedRouteSnapshot(
+    const leoRouting::StableRouteState& currentState, simtime_t currentInterval)
+{
+    const int64_t timestampMicros = leoRouting::parseTimestampMicros(currentInterval.str());
+    const std::filesystem::path filePath = getRoutingDirectory() / (currentInterval.str() + ".bin");
+    leoRouting::StableRouteState stateWithMetadata = currentState;
+    leoRouting::SnapshotHeader header;
+    std::vector<leoRouting::RouteRecord> records;
+
+    if (!hasGeneratedRouteSnapshot) {
+        header = leoRouting::makeBaseHeader(currentState, 0, timestampMicros);
+        records = currentState.effectiveRecords();
+    }
+    else {
+        const int32_t sequence = generatedRouteState.sequence() + 1;
+        header = leoRouting::makeDeltaHeader(generatedRouteState, currentState, sequence, timestampMicros);
+        records = leoRouting::diffRoutes(generatedRouteState, currentState);
+    }
+
+    leoRouting::writeV3SnapshotAtomic(filePath, header, records, allowRouteSnapshotOverwrite);
+    stateWithMetadata.setSnapshotMetadata(header);
+    generatedRouteState = std::move(stateWithMetadata);
+    hasGeneratedRouteSnapshot = true;
 }
 
 void LeoIpv4NetworkConfigurator::addNextHopInterface(cModule* source, cModule* destination, int interfaceID)
@@ -531,11 +574,7 @@ void LeoIpv4NetworkConfigurator::addNextHopInterface(cModule* source, cModule* d
     auto destinationIt = moduleGraphIdByModule.find(destination);
     if (sourceIt == moduleGraphIdByModule.end() || destinationIt == moduleGraphIdByModule.end())
         return;
-    int& currentInterfaceID = nextHopInterfaceMatrix[sourceIt->second][destinationIt->second];
-    if (currentInterfaceID != interfaceID) {
-        currentInterfaceID = interfaceID;
-        nextHopInterfaceGeneration++;
-    }
+    nextHopInterfaces.set(sourceIt->second, destinationIt->second, interfaceID);
 }
 
 void LeoIpv4NetworkConfigurator::removeNextHopInterface(cModule* source, cModule* destination)
@@ -544,11 +583,7 @@ void LeoIpv4NetworkConfigurator::removeNextHopInterface(cModule* source, cModule
     auto destinationIt = moduleGraphIdByModule.find(destination);
     if (sourceIt == moduleGraphIdByModule.end() || destinationIt == moduleGraphIdByModule.end())
         return;
-    int& currentInterfaceID = nextHopInterfaceMatrix[sourceIt->second][destinationIt->second];
-    if (currentInterfaceID != -1) {
-        currentInterfaceID = -1;
-        nextHopInterfaceGeneration++;
-    }
+    nextHopInterfaces.set(sourceIt->second, destinationIt->second, -1);
 }
 
 void LeoIpv4NetworkConfigurator::addGSLinktoTopologyGraph(int sourceNum, int destNum, double weight)
@@ -604,11 +639,10 @@ void LeoIpv4NetworkConfigurator::writeModuleIDMappingsToFile(const std::string& 
 {
     namespace fs = std::filesystem;
 
-    // Declare outFile here to be in scope
     std::ofstream outFile;
+    fs::path temporaryPath;
 
     if (!loadFiles) {
-        // Create folder if necessary
         fs::path pathObj(filePath);
         fs::path dir = pathObj.parent_path();
         if (!dir.empty() && !fs::exists(dir)) {
@@ -617,10 +651,12 @@ void LeoIpv4NetworkConfigurator::writeModuleIDMappingsToFile(const std::string& 
                 return;
             }
         }
-
-        outFile.open(filePath);
+        if (!allowRouteSnapshotOverwrite && fs::exists(pathObj))
+            throw cRuntimeError("Refusing to overwrite existing route ID map: %s", filePath.c_str());
+        temporaryPath = pathObj.string() + ".tmp";
+        outFile.open(temporaryPath, std::ios::trunc);
         if (!outFile.is_open()) {
-            EV << "Error: Could not open file " << filePath << " for writing.\n";
+            EV << "Error: Could not open temporary file " << temporaryPath << " for writing.\n";
             return;
         }
     }
@@ -655,6 +691,13 @@ void LeoIpv4NetworkConfigurator::writeModuleIDMappingsToFile(const std::string& 
     // Close file if loadFiles is false
     if (!loadFiles) {
         outFile.close();
+        std::error_code renameError;
+        fs::rename(temporaryPath, filePath, renameError);
+        if (renameError) {
+            fs::remove(temporaryPath);
+            throw cRuntimeError("Could not atomically publish route ID map %s: %s",
+                                filePath.c_str(), renameError.message().c_str());
+        }
         EV << "Module ID mappings written to " << filePath << "\n";
     }
 
@@ -786,7 +829,7 @@ void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
                         if(srcGateMod->getPathEndGate() == nextHopGateMod->getPathEndGate()){
                             addIpAddressMap(srcIE->getIpv4Address().getInt(), mod->getFullName());
                             if(nodeNum < numOfSats+numOfGS){
-                                nextHopInterfaceMatrix[nodeNum][nextHopNodeNum] = srcIE->getInterfaceId();
+                                nextHopInterfaces.set(nodeNum, nextHopNodeNum, srcIE->getInterfaceId());
                             }
                         }
                     }
@@ -794,7 +837,6 @@ void LeoIpv4NetworkConfigurator::fillNextHopInterfaceMap()
             }
         }
     }
-    nextHopInterfaceGeneration++;
 }
 
 double LeoIpv4NetworkConfigurator::computeLinkWeight(Link *link, const char *metric, cXMLElement *parameters)
