@@ -16,6 +16,8 @@
 #include <sstream>
 #include<iostream>
 #include <filesystem>
+#include <cmath>
+#include <cctype>
 #include <stdexcept>
 #include "LeoIpv4NetworkConfigurator.h"
 
@@ -26,9 +28,15 @@ static void silent_warning_handler(const char *reason, const char *file, int lin
     // Silence all warnings as the console will be filled with warnings if a ground station cannot connect to a satellite
 }
 
-static bool isEndpointTypeName(const std::string& typeName)
+static std::string trimWhitespace(const std::string& value)
 {
-    return typeName == "leosatellites.base.EndUser" || typeName == "leosatellites.base.UserTerminal";
+    size_t begin = 0;
+    while (begin < value.size() && std::isspace(static_cast<unsigned char>(value[begin])))
+        begin++;
+    size_t end = value.size();
+    while (end > begin && std::isspace(static_cast<unsigned char>(value[end - 1])))
+        end--;
+    return value.substr(begin, end - begin);
 }
 
 LeoIpv4NetworkConfigurator::~LeoIpv4NetworkConfigurator()
@@ -49,6 +57,13 @@ void LeoIpv4NetworkConfigurator::finish()
               << " operationsApplied=" << routeOperationsApplied
               << " sourceRowsRebuilt=" << routeSourceRowsRebuilt
               << " entriesResolved=" << routeEntriesResolved
+              << std::endl;
+    std::cout << "LEO_KPATH_STATS"
+              << " filesRead=" << kPathSnapshotFilesRead
+              << " bytesRead=" << kPathSnapshotBytesRead
+              << " groupsLoaded=" << kPathGroupsLoaded
+              << " pathsLoaded=" << kPathsLoaded
+              << " nodeIdsLoaded=" << kPathNodeIdsLoaded
               << std::endl;
 }
 
@@ -92,6 +107,14 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
         // Path calculation parameters
         numOfKPaths = par("numOfKPaths");
+        kPathsEdgeDisjoint = par("kPathsEdgeDisjoint");
+        kPathMaxRttSpreadMs = par("kPathMaxRttSpread").doubleValueInUnit("ms");
+        kPathSnapshotSet = par("kPathSnapshotSet").stringValue();
+        kPathEndpointPairsSpec = par("kPathEndpointPairs").stringValue();
+        if (numOfKPaths < 1)
+            throw cRuntimeError("numOfKPaths must be at least 1");
+        if (!std::isfinite(kPathMaxRttSpreadMs) || kPathMaxRttSpreadMs < 0)
+            throw cRuntimeError("kPathMaxRttSpread must be finite and non-negative");
         currentInterval = 0;
 
         // Read orbit characteristics
@@ -125,6 +148,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         writeModuleIDMappingsToFile((getRoutingDirectory() / "idMap.txt").string());
 
         updateModuleIDMappingsClientServer();
+        initializeKPathSnapshotConfiguration();
 
         igraph_vector_int_init(&islVec, 0);
     }
@@ -135,6 +159,105 @@ std::filesystem::path LeoIpv4NetworkConfigurator::getRoutingDirectory() const
 {
     const std::filesystem::path root(configLocation);
     return root.empty() ? std::filesystem::path(filePrefix) : root / filePrefix;
+}
+
+std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotDirectory() const
+{
+    const std::string profile = leoRouting::makeKPathSnapshotProfileName(
+        leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint), numOfKPaths,
+        kPathMaxRttSpreadMs, configuredKPathEndpointPairs);
+    return getRoutingDirectory() / "kpaths" / kPathSnapshotSet / profile;
+}
+
+std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotPath(simtime_t interval) const
+{
+    return getKPathSnapshotDirectory() / (interval.str() + ".bin");
+}
+
+void LeoIpv4NetworkConfigurator::initializeKPathSnapshotConfiguration()
+{
+    const std::string mode = trimWhitespace(par("kPathSnapshotMode").stringValue());
+    if (mode == "disabled")
+        kPathSnapshotMode = KPathSnapshotMode::Disabled;
+    else if (mode == "generate")
+        kPathSnapshotMode = KPathSnapshotMode::Generate;
+    else if (mode == "load")
+        kPathSnapshotMode = KPathSnapshotMode::Load;
+    else
+        throw cRuntimeError("Unknown kPathSnapshotMode '%s'; expected disabled, generate, or load",
+                            mode.c_str());
+
+    if (kPathSnapshotMode == KPathSnapshotMode::Disabled)
+        return;
+    if (numOfKPaths <= 1)
+        throw cRuntimeError("kPathSnapshotMode=%s requires numOfKPaths > 1", mode.c_str());
+    if (kPathSnapshotMode == KPathSnapshotMode::Load && !loadFiles)
+        throw cRuntimeError("kPathSnapshotMode=load requires loadFiles=true");
+
+    kPathSnapshotSet = trimWhitespace(kPathSnapshotSet);
+    if (kPathSnapshotSet.empty())
+        throw cRuntimeError("An explicit kPathSnapshotSet is required for endpoint-specific K paths");
+    if (kPathSnapshotSet == "." || kPathSnapshotSet == ".." ||
+        !std::all_of(kPathSnapshotSet.begin(), kPathSnapshotSet.end(), [](unsigned char character) {
+            return std::isalnum(character) || character == '_' || character == '-' || character == '.';
+        })) {
+        throw cRuntimeError("kPathSnapshotSet '%s' must be one safe directory-name component",
+                            kPathSnapshotSet.c_str());
+    }
+    initializeKPathEndpointPairs();
+}
+
+void LeoIpv4NetworkConfigurator::initializeKPathEndpointPairs()
+{
+    configuredKPathEndpointPairs.clear();
+    const int32_t endpointStart = std::min(static_cast<int32_t>(numOfSats + numOfGS),
+                                           static_cast<int32_t>(nodeModules.size()));
+    const std::string specification = trimWhitespace(kPathEndpointPairsSpec);
+    if (specification == "all") {
+        std::vector<int32_t> endpoints;
+        for (int32_t nodeId = endpointStart; nodeId < static_cast<int32_t>(nodeModules.size()); ++nodeId) {
+            if (nodeModules[nodeId] != nullptr)
+                endpoints.push_back(nodeId);
+        }
+        for (size_t first = 0; first < endpoints.size(); ++first) {
+            for (size_t second = first + 1; second < endpoints.size(); ++second)
+                configuredKPathEndpointPairs.emplace_back(endpoints[first], endpoints[second]);
+        }
+    }
+    else {
+        std::istringstream pairs(specification);
+        std::string token;
+        while (std::getline(pairs, token, ',')) {
+            token = trimWhitespace(token);
+            const size_t delimiter = token.find("->");
+            if (delimiter == std::string::npos || token.find("->", delimiter + 2) != std::string::npos)
+                throw cRuntimeError("Invalid kPathEndpointPairs entry '%s'; expected endpointA->endpointB",
+                                    token.c_str());
+            const std::string sourceName = trimWhitespace(token.substr(0, delimiter));
+            const std::string destinationName = trimWhitespace(token.substr(delimiter + 2));
+            auto source = moduleGraphIDMap.find(sourceName);
+            auto destination = moduleGraphIDMap.find(destinationName);
+            if (source == moduleGraphIDMap.end() || destination == moduleGraphIDMap.end())
+                throw cRuntimeError("Unknown endpoint in kPathEndpointPairs entry '%s'", token.c_str());
+            if (source->second < endpointStart || destination->second < endpointStart)
+                throw cRuntimeError("kPathEndpointPairs entry '%s' must contain end hosts, not core nodes",
+                                    token.c_str());
+            if (nodeModules[source->second] == nullptr || nodeModules[destination->second] == nullptr)
+                throw cRuntimeError("kPathEndpointPairs entry '%s' refers to a missing endpoint module",
+                                    token.c_str());
+            configuredKPathEndpointPairs.push_back(
+                leoRouting::normalizeKPathEndpointPair(source->second, destination->second));
+        }
+    }
+
+    if (configuredKPathEndpointPairs.empty())
+        throw cRuntimeError("No end-to-end pairs were selected by kPathEndpointPairs='%s'",
+                            specification.c_str());
+    std::sort(configuredKPathEndpointPairs.begin(), configuredKPathEndpointPairs.end());
+    for (size_t index = 1; index < configuredKPathEndpointPairs.size(); ++index) {
+        if (configuredKPathEndpointPairs[index - 1] == configuredKPathEndpointPairs[index])
+            throw cRuntimeError("kPathEndpointPairs contains a duplicate endpoint pair");
+    }
 }
 
 LeoIpv4 *LeoIpv4NetworkConfigurator::getIpv4Module(int nodeId)
@@ -287,9 +410,18 @@ void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterva
         if(!completedLoad){
             std::cerr << "WARNING: Failed to load routing files at simtime: " << simTime() << " Make sure you generate routing files before using loadFile = false in ini file." << endl;
         }
+        else if (kPathSnapshotMode == KPathSnapshotMode::Generate) {
+            rebuildCurrentPathTopology();
+            generateKPathSnapshot(currentInterval, stableRouteState);
+        }
+        else if (kPathSnapshotMode == KPathSnapshotMode::Load) {
+            loadKPathSnapshot(currentInterval, stableRouteState);
+        }
     }
     else{
         generateTopologyGraph(currentInterval);
+        if (kPathSnapshotMode == KPathSnapshotMode::Generate)
+            generateKPathSnapshot(currentInterval, generatedRouteState);
     }
 
 }
@@ -322,7 +454,7 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
                 igraph_vector_int_push_back(&islVec, destSatNumA);
 
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModA->getModuleByPath(".mobility"));
-                satelliteISLMobilityModules[sourceSatMobility].push_back(destSatMobility);
+                satelliteISLMobilityEdges.emplace_back(sourceSatMobility, destSatMobility);
 
                 islVecIterator = islVecIterator + 2;
 //                for(int i = 0; i < satMod->gateSize("pppg$o"); i++){  //check each possible pppg gate
@@ -336,7 +468,6 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
 //                            double distance = 0;
 //                            if(mobilityName == "leosatellites.mobility.SatelliteMobility"){
 //                                SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModA->getModuleByPath(".mobility"));
-//                                satelliteISLMobilityModules[sourceSatMobility].push_back(destSatMobility);
 //                            }
 //                        }
 //                    }
@@ -350,7 +481,7 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
                 igraph_vector_int_push_back(&islVec, destSatNumB);
 
                 SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModB->getModuleByPath(".mobility"));
-                satelliteISLMobilityModules[sourceSatMobility].push_back(destSatMobility);
+                satelliteISLMobilityEdges.emplace_back(sourceSatMobility, destSatMobility);
 
                 //islVecIterator = islVecIterator + 2;
 //                for(int i = 0; i < satMod->gateSize("pppg$o"); i++){  //check each possible pppg gate
@@ -363,7 +494,6 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
 //                            double distance = 0;
 //                            if(mobilityName == "leosatellites.mobility.SatelliteMobility"){
 //                                SatelliteMobility* destSatMobility = dynamic_cast<SatelliteMobility*>(destModB->getModuleByPath(".mobility"));
-//                                satelliteISLMobilityModules[sourceSatMobility].push_back(destSatMobility);
 //                            }
 //                        }
 //                    }
@@ -373,11 +503,48 @@ void LeoIpv4NetworkConfigurator::establishInitialISLs()
     }
 }
 
+void LeoIpv4NetworkConfigurator::rebuildCurrentPathTopology()
+{
+    const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS),
+                                           static_cast<int>(nodeModules.size()));
+    std::vector<std::pair<int32_t, int32_t>> edges;
+    std::vector<double> weightsMs;
+    edges.reserve(igraph_vector_int_size(&islVec) / 2 + groundStationLinks.size());
+    weightsMs.reserve(edges.capacity());
+
+    for (igraph_integer_t index = 0; index < igraph_vector_int_size(&islVec); index += 2) {
+        edges.emplace_back(static_cast<int32_t>(VECTOR(islVec)[index]),
+                           static_cast<int32_t>(VECTOR(islVec)[index + 1]));
+    }
+
+    for (const auto& [sourceMobility, destinationMobility] : satelliteISLMobilityEdges) {
+        const double distanceMeters = sourceMobility->getDistance(destinationMobility->getLatitude(),
+                                                                   destinationMobility->getLongitude(),
+                                                                   destinationMobility->getAltitude()) * 1000;
+        weightsMs.push_back((distanceMeters / 299792458.0) * 1000);
+    }
+    if (edges.size() != weightsMs.size())
+        throw cRuntimeError("ISL edge/weight count mismatch while building the path topology: %zu edges, %zu weights",
+                            edges.size(), weightsMs.size());
+
+    std::queue<std::tuple<int, int, double>> currentGroundStationLinks = groundStationLinks;
+    while (!currentGroundStationLinks.empty()) {
+        const auto [source, destination, weightMs] = currentGroundStationLinks.front();
+        currentGroundStationLinks.pop();
+        edges.emplace_back(source, destination);
+        weightsMs.push_back(weightMs);
+    }
+
+    currentPathTopology.reset(routableNodeCount, edges, weightsMs);
+    pathTopologyGeneration++;
+}
+
 void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval)
 {
     const int routableNodeCount = std::min(static_cast<int>(numOfSats + numOfGS),
                                            static_cast<int>(nodeModules.size()));
     leoRouting::StableRouteState currentRouteState(routableNodeCount, routableNodeCount);
+    rebuildCurrentPathTopology();
 
     for (int nodeNum = 0; nodeNum < numOfSats+numOfGS; nodeNum++) {
         LeoIpv4 *ipv4Mod = ipv4Modules[nodeNum];
@@ -389,157 +556,42 @@ void LeoIpv4NetworkConfigurator::generateTopologyGraph(simtime_t currentInterval
         if (ipv4Mod != nullptr)
             ipv4Mod->clearNextHops();
     }
-    igraph_t constellationTopology;
-    igraph_vector_int_t shortestPathVertexVec, shortestPathEdgesVec;
-    igraph_vector_int_t islVecCopy;
-    igraph_vector_int_init_copy(&islVecCopy, &islVec);
-    //std::cout << "\nOG ISL VEC SIZE: " << igraph_vector_int_size(&islVec) << endl;
-    igraph_vector_t weightsVec;
-    igraph_vector_init(&weightsVec, 0);
-    unsigned int islVecIterator = 0;
-    unsigned int weightsVecIterator = 0;
-    for (auto iter = satelliteISLMobilityModules.begin(); iter != satelliteISLMobilityModules.end(); ++iter) {
-        std::vector<SatelliteMobility*> mobVec = iter->second;
-        for (SatelliteMobility* iter2 : mobVec) {
-            //if(iter->first != iter2){
-                //std::cout << "\nSOURCE SAT: " << iter->first->getParentModule()->getFullName() << "\nDEST SAT: " << iter2->getParentModule()->getFullName();
-                double distance = iter->first->getDistance(iter2->getLatitude(), iter2->getLongitude(), iter2->getAltitude())*1000;
-                double weight = (distance/299792458)*1000;
-                //VECTOR(weightsVec)[weightsVecIterator] = weight;
-                igraph_vector_push_back(&weightsVec, weight);
-                weightsVecIterator++;
-                islVecIterator = islVecIterator + 2;
-            //}
-        }
-    }
-    int numberOfGSLinks = groundStationLinks.size();
-    for(int i = 0; i < numberOfGSLinks; i++){ //TODO USE ATTRIBUTE NAMES TO
-        std::tuple<int, int, double> gsTup = groundStationLinks.front();
-        groundStationLinks.pop();
-        igraph_vector_int_push_back(&islVecCopy, std::get<0>(gsTup)); // @suppress("Function cannot be instantiated")
-        igraph_vector_int_push_back(&islVecCopy, std::get<1>(gsTup));
-        //VECTOR(weightsVec)[weightsVecIterator] = std::get<2>(gsTup);
-        igraph_vector_push_back(&weightsVec, std::get<2>(gsTup));
-        islVecIterator = islVecIterator + 2;
-        weightsVecIterator++;
-    }
-
-    igraph_empty(&constellationTopology, numOfSats+numOfGS, IGRAPH_UNDIRECTED);
-
-    igraph_add_edges(&constellationTopology, &islVecCopy, 0);
-
-    igraph_vector_int_init(&shortestPathVertexVec, 1);
-    igraph_vector_int_init(&shortestPathEdgesVec, 1);
-
+    igraph_vector_int_t shortestPathVertexVec;
+    igraph_vector_int_init(&shortestPathVertexVec, 0);
     igraph_vector_int_list_t vertexPaths;
-    igraph_vector_int_list_t edgePaths;
+    igraph_vector_int_list_init(&vertexPaths, 0);
 
-    igraph_vector_int_list_init(&vertexPaths, 1);
-    igraph_vector_int_list_init(&edgePaths, 1);
-
-    if(numOfKPaths <= 1){
-        int fmDuration = 0;
-        int rDuration = 0;
-        for(int sourceNodeNum = 0; sourceNodeNum < numOfSats+numOfGS; sourceNodeNum++){
-            igraph_get_all_shortest_paths_dijkstra(&constellationTopology, &vertexPaths, &edgePaths, /*nrgeo=*/ &shortestPathVertexVec, /*from=*/ sourceNodeNum, /*to=*/ igraph_vss_all(), /*weights=*/ &weightsVec, /*mode=*/ IGRAPH_ALL);
-            cModule *sourceMod = nodeModules[sourceNodeNum];
-            LeoIpv4* srcIpv4Mod = ipv4Modules[sourceNodeNum];
-            if (srcIpv4Mod == nullptr) {
-                srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
-                ipv4Modules[sourceNodeNum] = srcIpv4Mod;
-            }
-            igraph_vector_int_t *path;
-            for (int i = 0; i < igraph_vector_int_list_size(&vertexPaths); i++) {
-                path = igraph_vector_int_list_get_ptr(&vertexPaths, i);
-                int sourceNodeNum = igraph_vector_int_get(path, 0);
-                int nextHopNodeNum = igraph_vector_int_get(path, 1);
-                int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path)-1);
-                if(sourceNodeNum != destinationNodeNum){
-                    int nextHopID = nextHopInterfaces.get(sourceNodeNum, nextHopNodeNum);
-//                    IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
-//                    int totalInterfaces = 0;
-//                    for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
-//                        NetworkInterface *destinationIE = destIft->getInterface(j);
-//                        if (!destinationIE->isLoopback()){
-////                            srcIpv4Mod->addNextHop(destinationIE->getIpv4Address().getInt(),nextHopID);
-////                            std::string str1 = destMod->getFullName();
-////                            std::string str2 = nextHopMod->getFullName() + std::to_string(nextHopID);
-////                            //str2 = str2 + std::string(nextHopID);
-////                            srcIpv4Mod->addNextHopStr(str1, str2);
-////                            //srcIpv4Mod->addKNextHop(1, destinationIE->getIpv4Address().getInt(), nextHopID);
-////                            int32_t src = sourceNodeNum;
-////                            int32_t dst = destinationIE->getIpv4Address().getInt();
-////                            int32_t nhop = nextHopID;
-//                        }
-//                        else{
-//                            totalInterfaces = totalInterfaces + 1;
-//                        }
-//                    }
-                    srcIpv4Mod->addKNextHop(1, destinationNodeNum, nextHopID);
-                    currentRouteState.setRoute(sourceNodeNum, destinationNodeNum, nextHopNodeNum);
-                }
-            }
-            igraph_vector_int_destroy(path);
-            igraph_vector_int_list_clear(&vertexPaths);
-            igraph_vector_int_list_clear(&edgePaths);
+    for (int sourceNodeNum = 0; sourceNodeNum < numOfSats + numOfGS; sourceNodeNum++) {
+        const igraph_error_t error = igraph_get_all_shortest_paths_dijkstra(
+            currentPathTopology.graph(), &vertexPaths, nullptr,
+            &shortestPathVertexVec, sourceNodeNum, igraph_vss_all(),
+            currentPathTopology.weights(), IGRAPH_ALL);
+        if (error != IGRAPH_SUCCESS)
+            throw cRuntimeError("igraph_get_all_shortest_paths_dijkstra failed for source %d: %s",
+                                sourceNodeNum, igraph_strerror(error));
+        cModule *sourceMod = nodeModules[sourceNodeNum];
+        LeoIpv4 *srcIpv4Mod = ipv4Modules[sourceNodeNum];
+        if (srcIpv4Mod == nullptr) {
+            srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
+            ipv4Modules[sourceNodeNum] = srcIpv4Mod;
         }
-    }
-    else{
-        for(int sourceNodeNum = 0; sourceNodeNum < numOfSats+numOfGS; sourceNodeNum++){
-            cModule *sourceMod = nodeModules[sourceNodeNum];
-            LeoIpv4* srcIpv4Mod = ipv4Modules[sourceNodeNum];
-            if (srcIpv4Mod == nullptr) {
-                srcIpv4Mod = dynamic_cast<LeoIpv4 *>(sourceMod->getModuleByPath(".ipv4.ip"));
-                ipv4Modules[sourceNodeNum] = srcIpv4Mod;
-            }
-            for(int destNodeNum = 0; destNodeNum <  numOfSats+numOfGS; destNodeNum++){
-                if(sourceNodeNum != destNodeNum){
-                    igraph_get_k_shortest_paths(&constellationTopology, &weightsVec, &vertexPaths, &edgePaths, numOfKPaths, sourceNodeNum, destNodeNum, IGRAPH_ALL);
-                    igraph_vector_int_t *path;
-                    for (int i = 0; i < igraph_vector_int_list_size(&vertexPaths); i++) {
-                        path = igraph_vector_int_list_get_ptr(&vertexPaths, i);
-                        int sourceNodeNum = igraph_vector_int_get(path, 0);
-                        int nextHopNodeNum = igraph_vector_int_get(path, 1);
-                        int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path)-1);
-                        if(sourceNodeNum != destinationNodeNum){
-                            int nextHopID = nextHopInterfaces.get(sourceNodeNum, nextHopNodeNum);
-//                            IInterfaceTable* destIft = dynamic_cast<IInterfaceTable*>(destMod->getSubmodule("interfaceTable"));
-//                            for (size_t j = 0; j < destIft->getNumInterfaces(); j++) {
-//                                NetworkInterface *destinationIE = destIft->getInterface(j);
-//                                if (!destinationIE->isLoopback()){
-//                                    srcIpv4Mod->addNextHop(destinationIE->getIpv4Address().getInt(),nextHopID);
-//                                    srcIpv4Mod->addKNextHop(i+1, destinationIE->getIpv4Address().getInt(), nextHopID);
-//
-//                                    int32_t src = sourceNodeNum;
-//                                    int32_t dst = destinationIE->getIpv4Address().getInt();
-//                                    int32_t nhop = nextHopID;
-//                                    fout.write(reinterpret_cast<const char*>(&src), sizeof(int32_t));
-//                                    fout.write(reinterpret_cast<const char*>(&dst), sizeof(int32_t));
-//                                    fout.write(reinterpret_cast<const char*>(&nhop), sizeof(int32_t));
-//                                }
-//                            }
-                            srcIpv4Mod->addKNextHop(i+1, destinationNodeNum, nextHopID);
-                            // Canonical stable state preserves the old writer/loader's
-                            // last-record-wins behavior for equal-cost duplicates.
-                            currentRouteState.setRoute(sourceNodeNum, destinationNodeNum, nextHopNodeNum);
-                        }
-                    }
-                    igraph_vector_int_destroy(path);
-                    igraph_vector_int_list_clear(&vertexPaths);
-                    igraph_vector_int_list_clear(&edgePaths);
-                }
+        for (igraph_integer_t i = 0; i < igraph_vector_int_list_size(&vertexPaths); i++) {
+            const igraph_vector_int_t *path = igraph_vector_int_list_get_ptr(&vertexPaths, i);
+            if (igraph_vector_int_size(path) < 2)
+                continue;
+            int pathSourceNodeNum = igraph_vector_int_get(path, 0);
+            int nextHopNodeNum = igraph_vector_int_get(path, 1);
+            int destinationNodeNum = igraph_vector_int_get(path, igraph_vector_int_size(path) - 1);
+            if (pathSourceNodeNum != destinationNodeNum) {
+                int nextHopID = nextHopInterfaces.get(pathSourceNodeNum, nextHopNodeNum);
+                srcIpv4Mod->addKNextHop(1, destinationNodeNum, nextHopID);
+                currentRouteState.setRoute(pathSourceNodeNum, destinationNodeNum, nextHopNodeNum);
             }
         }
+        igraph_vector_int_list_clear(&vertexPaths);
     }
     igraph_vector_int_list_destroy(&vertexPaths);
-    igraph_vector_int_list_destroy(&edgePaths);
-
-    while(!groundStationLinks.empty()) groundStationLinks.pop();
-    igraph_destroy(&constellationTopology);
-    igraph_vector_int_destroy(&islVecCopy);
-    igraph_vector_destroy(&weightsVec);
     igraph_vector_int_destroy(&shortestPathVertexVec);
-    igraph_vector_int_destroy(&shortestPathEdgesVec);
     writeGeneratedRouteSnapshot(currentRouteState, currentInterval);
 }
 
@@ -959,6 +1011,9 @@ void LeoIpv4NetworkConfigurator::setIpv4NodeIds()
 
 void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
 {
+    const size_t endpointStart = std::min(static_cast<size_t>(numOfSats + numOfGS),
+                                          nodeModules.size());
+    const auto previousEndpointToNodeMap = endpointToNodeMap;
     endpointToNodeMap.clear();
     endpointAttachmentInterfaceIds.clear();
     endpointUplinkInterfaceIds.clear();
@@ -966,12 +1021,9 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
         nodeNumEndpointsMap[modId] = 0;
     }
 
-    for (size_t modId = 0; modId < nodeModules.size(); modId++) {
+    for (size_t modId = endpointStart; modId < nodeModules.size(); modId++) {
         cModule *modulePtr = nodeModules[modId];
         if (modulePtr == nullptr)
-            continue;
-        std::string typeName = modulePtr->getNedTypeName();
-        if (!isEndpointTypeName(typeName))
             continue;
 
         for (int gateIndex = 0; gateIndex < modulePtr->gateSize("pppg$o"); gateIndex++) {
@@ -1016,6 +1068,259 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
             break;
         }
     }
+    if (endpointToNodeMap != previousEndpointToNodeMap) {
+        endpointAttachmentGeneration++;
+        currentKPathGroups.clear();
+    }
+}
+
+double LeoIpv4NetworkConfigurator::getEndpointAccessOneWayDelayMs(int nodeId) const
+{
+    if (nodeId < 0 || nodeId >= static_cast<int>(nodeModules.size()) ||
+        nodeId < static_cast<int>(numOfSats + numOfGS))
+        return 0;
+
+    cModule *endpoint = nodeModules[nodeId];
+    if (endpoint == nullptr)
+        throw cRuntimeError("Endpoint node %d does not have a module", nodeId);
+
+    for (int gateIndex = 0; gateIndex < endpoint->gateSize("pppg$o"); gateIndex++) {
+        cGate *outputGate = endpoint->gate("pppg$o", gateIndex);
+        if (!outputGate->isConnected())
+            continue;
+        cDatarateChannel *channel = dynamic_cast<cDatarateChannel *>(outputGate->findTransmissionChannel());
+        if (channel != nullptr)
+            return channel->getDelay().dbl() * 1000;
+    }
+    throw cRuntimeError("Endpoint node %d does not have an active access channel", nodeId);
+}
+
+std::vector<leoRouting::KPathEndpointState>
+LeoIpv4NetworkConfigurator::getConfiguredKPathEndpointStates() const
+{
+    std::vector<int32_t> endpointIds;
+    endpointIds.reserve(configuredKPathEndpointPairs.size() * 2);
+    for (const auto& [source, destination] : configuredKPathEndpointPairs) {
+        endpointIds.push_back(source);
+        endpointIds.push_back(destination);
+    }
+    std::sort(endpointIds.begin(), endpointIds.end());
+    endpointIds.erase(std::unique(endpointIds.begin(), endpointIds.end()), endpointIds.end());
+
+    std::vector<leoRouting::KPathEndpointState> states;
+    states.reserve(endpointIds.size());
+    for (int32_t endpointId : endpointIds) {
+        leoRouting::KPathEndpointState state;
+        state.endpointNodeId = endpointId;
+        auto attachment = endpointToNodeMap.find(endpointId);
+        if (attachment != endpointToNodeMap.end()) {
+            state.coreNodeId = attachment->second;
+            state.accessOneWayDelayMs = getEndpointAccessOneWayDelayMs(endpointId);
+        }
+        states.push_back(state);
+    }
+    return states;
+}
+
+leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::computeCanonicalKShortestPathGroup(
+    int32_t sourceEndpoint, int32_t destinationEndpoint) const
+{
+    const auto canonicalPair = leoRouting::normalizeKPathEndpointPair(sourceEndpoint, destinationEndpoint);
+    leoRouting::KShortestPathGroup group;
+    group.sourceNodeId = canonicalPair.first;
+    group.destinationNodeId = canonicalPair.second;
+    group.requestedPathCount = numOfKPaths;
+    group.maxRttSpreadMs = kPathMaxRttSpreadMs;
+    group.edgeDisjoint = kPathsEdgeDisjoint;
+    group.topologyGeneration = pathTopologyGeneration;
+    group.endpointAttachmentGeneration = endpointAttachmentGeneration;
+
+    auto sourceAttachment = endpointToNodeMap.find(group.sourceNodeId);
+    auto destinationAttachment = endpointToNodeMap.find(group.destinationNodeId);
+    if (sourceAttachment == endpointToNodeMap.end() || destinationAttachment == endpointToNodeMap.end()) {
+        group.coreSourceNodeId = sourceAttachment == endpointToNodeMap.end() ? -1 : sourceAttachment->second;
+        group.coreDestinationNodeId = destinationAttachment == endpointToNodeMap.end() ? -1 : destinationAttachment->second;
+        return group;
+    }
+
+    group.coreSourceNodeId = sourceAttachment->second;
+    group.coreDestinationNodeId = destinationAttachment->second;
+
+    const double accessOneWayDelayMs = getEndpointAccessOneWayDelayMs(group.sourceNodeId) +
+                                       getEndpointAccessOneWayDelayMs(group.destinationNodeId);
+    const leoRouting::KShortestPathOptions options = {
+        numOfKPaths,
+        kPathMaxRttSpreadMs,
+        kPathsEdgeDisjoint,
+    };
+    group.paths = currentPathTopology.findPaths(group.coreSourceNodeId, group.coreDestinationNodeId,
+                                                options, accessOneWayDelayMs);
+    for (leoRouting::KShortestPath& path : group.paths) {
+        path.nodeIds.insert(path.nodeIds.begin(), group.sourceNodeId);
+        path.nodeIds.push_back(group.destinationNodeId);
+    }
+    return group;
+}
+
+void LeoIpv4NetworkConfigurator::generateKPathSnapshot(
+    simtime_t interval, const leoRouting::StableRouteState& routeState)
+{
+    if (!currentPathTopology.isInitialized())
+        throw cRuntimeError("Cannot generate endpoint K paths before the weighted topology is initialized");
+    const int32_t sequence = routeState.hasSequenceMetadata() ?
+        routeState.sequence() : nextKPathSnapshotSequence;
+    if (sequence != nextKPathSnapshotSequence)
+        throw cRuntimeError("Endpoint K-path generation expected sequence %d but primary route state has %d",
+                            nextKPathSnapshotSequence, sequence);
+
+    std::vector<leoRouting::KShortestPathGroup> groups;
+    groups.reserve(configuredKPathEndpointPairs.size());
+    for (const auto& [source, destination] : configuredKPathEndpointPairs)
+        groups.push_back(computeCanonicalKShortestPathGroup(source, destination));
+
+    leoRouting::KPathSnapshotHeader header;
+    header.sequence = sequence;
+    header.timestampMicros = leoRouting::parseTimestampMicros(interval.str());
+    header.routableNodeCount = routeState.sourceCount();
+    header.totalNodeCount = static_cast<int32_t>(nodeModules.size());
+    header.maxPathCount = numOfKPaths;
+    header.algorithm = leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint);
+    header.maxRttSpreadMs = kPathMaxRttSpreadMs;
+    header.edgeDisjoint = kPathsEdgeDisjoint;
+    header.routeStateHash = routeState.stateHash();
+    header.endpointStateHash = leoRouting::computeKPathEndpointStateHash(
+        getConfiguredKPathEndpointStates());
+    leoRouting::writeKPathSnapshotAtomic(getKPathSnapshotPath(interval), header, groups,
+                                         allowRouteSnapshotOverwrite);
+
+    std::unordered_map<uint64_t, leoRouting::KShortestPathGroup> candidateCatalog;
+    candidateCatalog.reserve(groups.size());
+    for (auto& group : groups)
+        candidateCatalog.emplace(leoRouting::kPathEndpointPairKey(group.sourceNodeId, group.destinationNodeId),
+                                 std::move(group));
+    currentKPathGroups.swap(candidateCatalog);
+    nextKPathSnapshotSequence++;
+}
+
+void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
+    simtime_t interval, const leoRouting::StableRouteState& routeState)
+{
+    const std::filesystem::path path = getKPathSnapshotPath(interval);
+    leoRouting::KPathSnapshot snapshot;
+    try {
+        snapshot = leoRouting::readKPathSnapshot(path);
+    }
+    catch (const std::exception& error) {
+        throw cRuntimeError("Failed to load endpoint K-path snapshot %s: %s",
+                            path.string().c_str(), error.what());
+    }
+
+    const int32_t expectedSequence = routeState.hasSequenceMetadata() ?
+        routeState.sequence() : nextKPathSnapshotSequence;
+    const int32_t routableNodeCount = std::min(static_cast<int32_t>(numOfSats + numOfGS),
+                                               static_cast<int32_t>(nodeModules.size()));
+    if (snapshot.header.sequence != expectedSequence)
+        throw cRuntimeError("Endpoint K-path snapshot %s has sequence %d; expected %d",
+                            path.string().c_str(), snapshot.header.sequence, expectedSequence);
+    if (snapshot.header.routableNodeCount != routableNodeCount ||
+        snapshot.header.totalNodeCount != static_cast<int32_t>(nodeModules.size()))
+        throw cRuntimeError("Endpoint K-path snapshot %s does not match the current node dimensions",
+                            path.string().c_str());
+    if (snapshot.header.maxPathCount != numOfKPaths ||
+        snapshot.header.algorithm != leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint) ||
+        snapshot.header.maxRttSpreadMs != kPathMaxRttSpreadMs ||
+        snapshot.header.edgeDisjoint != kPathsEdgeDisjoint)
+        throw cRuntimeError("Endpoint K-path snapshot %s does not match the configured K-path policy",
+                            path.string().c_str());
+    if (snapshot.header.routeStateHash != routeState.stateHash())
+        throw cRuntimeError("Endpoint K-path snapshot %s was generated for a different primary route state",
+                            path.string().c_str());
+    const uint64_t endpointStateHash = leoRouting::computeKPathEndpointStateHash(
+        getConfiguredKPathEndpointStates());
+    if (snapshot.header.endpointStateHash != endpointStateHash)
+        throw cRuntimeError("Endpoint K-path snapshot %s does not match the current endpoint attachments or access delays",
+                            path.string().c_str());
+    if (snapshot.groups.size() != configuredKPathEndpointPairs.size())
+        throw cRuntimeError("Endpoint K-path snapshot %s contains %zu pairs; expected %zu",
+                            path.string().c_str(), snapshot.groups.size(),
+                            configuredKPathEndpointPairs.size());
+
+    std::unordered_map<uint64_t, leoRouting::KShortestPathGroup> candidateCatalog;
+    candidateCatalog.reserve(snapshot.groups.size());
+    for (auto& group : snapshot.groups) {
+        const uint64_t pairKey = leoRouting::kPathEndpointPairKey(group.sourceNodeId,
+                                                                  group.destinationNodeId);
+        candidateCatalog.emplace(pairKey, std::move(group));
+    }
+    for (const auto& [source, destination] : configuredKPathEndpointPairs) {
+        const uint64_t pairKey = leoRouting::kPathEndpointPairKey(source, destination);
+        auto group = candidateCatalog.find(pairKey);
+        if (group == candidateCatalog.end())
+            throw cRuntimeError("Endpoint K-path snapshot %s is missing configured pair (%d,%d)",
+                                path.string().c_str(), source, destination);
+        const int32_t expectedSourceCore = endpointToNodeMap.count(source) ? endpointToNodeMap.at(source) : -1;
+        const int32_t expectedDestinationCore = endpointToNodeMap.count(destination) ? endpointToNodeMap.at(destination) : -1;
+        if (group->second.coreSourceNodeId != expectedSourceCore ||
+            group->second.coreDestinationNodeId != expectedDestinationCore) {
+            throw cRuntimeError("Endpoint K-path snapshot %s has stale attachments for pair (%d,%d)",
+                                path.string().c_str(), source, destination);
+        }
+    }
+
+    pathTopologyGeneration++;
+    for (auto& [pairKey, group] : candidateCatalog) {
+        group.topologyGeneration = pathTopologyGeneration;
+        group.endpointAttachmentGeneration = endpointAttachmentGeneration;
+        kPathGroupsLoaded++;
+        kPathsLoaded += group.paths.size();
+        for (const leoRouting::KShortestPath& savedPath : group.paths)
+            kPathNodeIdsLoaded += savedPath.nodeIds.size();
+    }
+    kPathSnapshotFilesRead++;
+    kPathSnapshotBytesRead += snapshot.bytesRead;
+    currentKPathGroups.swap(candidateCatalog);
+    nextKPathSnapshotSequence++;
+}
+
+leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::getKShortestPathGroup(
+    int sourceNodeId, int destinationNodeId, int requestedPathCount) const
+{
+    if (kPathSnapshotMode == KPathSnapshotMode::Disabled)
+        throw cRuntimeError("Endpoint K-path snapshots are disabled");
+    const int pathCount = requestedPathCount < 0 ? numOfKPaths : requestedPathCount;
+    if (pathCount < 1 || pathCount > numOfKPaths)
+        throw cRuntimeError("Requested K-shortest path count %d is outside the configured range 1..%d",
+                            pathCount, numOfKPaths);
+    uint64_t pairKey;
+    try {
+        pairKey = leoRouting::kPathEndpointPairKey(sourceNodeId, destinationNodeId);
+    }
+    catch (const std::exception& error) {
+        throw cRuntimeError("Invalid endpoint K-path query: %s", error.what());
+    }
+    auto savedGroup = currentKPathGroups.find(pairKey);
+    if (savedGroup == currentKPathGroups.end())
+        throw cRuntimeError("No saved endpoint K-path group is configured for nodes %d and %d",
+                            sourceNodeId, destinationNodeId);
+    try {
+        return leoRouting::orientKShortestPathGroup(savedGroup->second, sourceNodeId,
+                                                    destinationNodeId, pathCount);
+    }
+    catch (const std::exception& error) {
+        throw cRuntimeError("Failed to read saved endpoint K-path group: %s", error.what());
+    }
+}
+
+leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::getKShortestPathGroupForAddresses(
+    int sourceAddress, int destinationAddress, int requestedPathCount) const
+{
+    auto source = routerIdMap.find(sourceAddress);
+    if (source == routerIdMap.end())
+        throw cRuntimeError("No LEO node mapping exists for source IPv4 address %d", sourceAddress);
+    auto destination = routerIdMap.find(destinationAddress);
+    if (destination == routerIdMap.end())
+        throw cRuntimeError("No LEO node mapping exists for destination IPv4 address %d", destinationAddress);
+    return getKShortestPathGroup(source->second, destination->second, requestedPathCount);
 }
 
 int LeoIpv4NetworkConfigurator::getEndpointAttachmentInterfaceId(int nodeId) {

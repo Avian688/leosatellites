@@ -38,10 +38,12 @@ OBJS = \
     $O/mobility/NoradA.o \
     $O/mobility/NoradTLE.o \
     $O/mobility/SatelliteMobility.o \
-    $O/networklayer/configurator/ipv4/LeoRouteSnapshot.o \
+    $O/networklayer/configurator/ipv4/LeoKPathSnapshot.o \
+    $O/networklayer/configurator/ipv4/LeoKShortestPaths.o \
     $O/networklayer/configurator/ipv4/LeoIpv4NetworkConfigurator.o \
     $O/networklayer/configurator/ipv4/LeoIpv4NodeConfigurator.o \
     $O/networklayer/configurator/ipv4/LeoNetworkConfigurator.o \
+    $O/networklayer/configurator/ipv4/LeoRouteSnapshot.o \
     $O/networklayer/configurator/ipv4/MatcherOS3.o \
     $O/networklayer/configurator/ipv4/SatelliteNetworkConfigurator.o \
     $O/networklayer/configurator/ipv4/SatelliteNodeConfigurator.o \

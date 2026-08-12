@@ -73,6 +73,7 @@ out/
 netanim-trace.txt
 *.out
 /tests/route_snapshots/RouteSnapshotTests
+/tests/k_shortest_paths/KShortestPathTests
 /tools/route_snapshots/leo_route_snapshot_tool
 
 # ignore backup and temp files

@@ -21,6 +21,7 @@
 #include <filesystem>
 #include <igraph.h>
 #include <queue>
+#include <string>
 #include <tuple>
 #include <unordered_map>
 #include <vector>
@@ -30,6 +31,8 @@
 
 #include "../../ipv4/LeoIpv4.h"
 #include "../../ipv4/LeoIpv4RoutingTable.h"
+#include "LeoKShortestPaths.h"
+#include "LeoKPathSnapshot.h"
 #include "LeoRouteSnapshot.h"
 #include "../../../mobility/SatelliteMobility.h"
 #include "../../../mobility/GroundStationMobility.h"
@@ -38,6 +41,13 @@
 
 namespace inet {
 class INET_API LeoIpv4NetworkConfigurator : public L3NetworkConfiguratorBase {
+  private:
+    enum class KPathSnapshotMode {
+        Disabled,
+        Generate,
+        Load,
+    };
+
 protected:
     //typedef igraph_error_type_t igraph_error_t;
     virtual int numInitStages() const override { return NUM_INIT_STAGES; }
@@ -73,9 +83,14 @@ protected:
     std::uint64_t routeOperationsApplied = 0;
     std::uint64_t routeSourceRowsRebuilt = 0;
     std::uint64_t routeEntriesResolved = 0;
+    std::uint64_t kPathSnapshotFilesRead = 0;
+    std::uint64_t kPathSnapshotBytesRead = 0;
+    std::uint64_t kPathGroupsLoaded = 0;
+    std::uint64_t kPathsLoaded = 0;
+    std::uint64_t kPathNodeIdsLoaded = 0;
     std::unordered_map<cModule*, int> moduleGraphIdByModule;
 
-    std::map<SatelliteMobility*, std::vector<SatelliteMobility*>> satelliteISLMobilityModules;
+    std::vector<std::pair<SatelliteMobility*, SatelliteMobility*>> satelliteISLMobilityEdges;
     std::string networkName;
     std::string configLocation;
     std::string filePrefix;
@@ -89,9 +104,31 @@ protected:
     const char* linkMetric;
     std::queue<std::tuple<int, int, double>> groundStationLinks;
     int numOfKPaths;
+    bool kPathsEdgeDisjoint = false;
+    double kPathMaxRttSpreadMs = 5;
+    KPathSnapshotMode kPathSnapshotMode = KPathSnapshotMode::Disabled;
+    std::string kPathSnapshotSet;
+    std::string kPathEndpointPairsSpec;
+    std::vector<std::pair<int32_t, int32_t>> configuredKPathEndpointPairs;
+    std::unordered_map<uint64_t, leoRouting::KShortestPathGroup> currentKPathGroups;
+    int32_t nextKPathSnapshotSequence = 0;
+    leoRouting::KShortestPathFinder currentPathTopology;
+    std::uint64_t pathTopologyGeneration = 0;
+    std::uint64_t endpointAttachmentGeneration = 0;
 
     std::filesystem::path getRoutingDirectory() const;
+    std::filesystem::path getKPathSnapshotDirectory() const;
+    std::filesystem::path getKPathSnapshotPath(simtime_t interval) const;
     LeoIpv4 *getIpv4Module(int nodeId);
+    void initializeKPathSnapshotConfiguration();
+    void initializeKPathEndpointPairs();
+    void rebuildCurrentPathTopology();
+    double getEndpointAccessOneWayDelayMs(int nodeId) const;
+    std::vector<leoRouting::KPathEndpointState> getConfiguredKPathEndpointStates() const;
+    leoRouting::KShortestPathGroup computeCanonicalKShortestPathGroup(
+        int32_t sourceEndpoint, int32_t destinationEndpoint) const;
+    void generateKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
+    void loadKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
     void applyFullRouteState(leoRouting::StableRouteState&& candidateState);
     void applyDeltaRouteState(const leoRouting::ParsedSnapshot& snapshot);
     void writeGeneratedRouteSnapshot(const leoRouting::StableRouteState& currentState,
@@ -144,6 +181,11 @@ public:
 
     virtual int getEndpointAttachmentInterfaceId(int nodeId);
     virtual int getEndpointUplinkInterfaceId(int nodeId);
+
+    virtual leoRouting::KShortestPathGroup getKShortestPathGroup(
+        int sourceNodeId, int destinationNodeId, int requestedPathCount = -1) const;
+    virtual leoRouting::KShortestPathGroup getKShortestPathGroupForAddresses(
+        int sourceAddress, int destinationAddress, int requestedPathCount = -1) const;
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

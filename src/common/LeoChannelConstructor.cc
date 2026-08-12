@@ -169,11 +169,11 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
 
         configurator->fillNextHopInterfaceMap();
 
+        configurator->setGroundStationsWithEndpoints();
+
         configurator->updateForwardingStates(simTime());
 
         configurator->setIpv4NodeIds();
-
-        configurator->setGroundStationsWithEndpoints();
 
         scheduleUpdate(true);
     }
