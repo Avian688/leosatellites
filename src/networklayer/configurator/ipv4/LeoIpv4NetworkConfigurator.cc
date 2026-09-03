@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <cmath>
 #include <cctype>
+#include <iterator>
 #include <stdexcept>
 #include "LeoIpv4NetworkConfigurator.h"
 
@@ -108,11 +109,17 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         // Path calculation parameters
         numOfKPaths = par("numOfKPaths");
         kPathsEdgeDisjoint = par("kPathsEdgeDisjoint");
+        kPathMaxSharedLinks = par("kPathMaxSharedLinks");
         kPathMaxRttSpreadMs = par("kPathMaxRttSpread").doubleValueInUnit("ms");
         kPathSnapshotSet = par("kPathSnapshotSet").stringValue();
         kPathEndpointPairsSpec = par("kPathEndpointPairs").stringValue();
+        kPathPingRouting = par("kPathPingRouting");
         if (numOfKPaths < 1)
             throw cRuntimeError("numOfKPaths must be at least 1");
+        if (kPathMaxSharedLinks < -1)
+            throw cRuntimeError("kPathMaxSharedLinks must be -1 or non-negative");
+        if (kPathsEdgeDisjoint && kPathMaxSharedLinks != -1)
+            throw cRuntimeError("kPathMaxSharedLinks applies only when kPathsEdgeDisjoint=false");
         if (!std::isfinite(kPathMaxRttSpreadMs) || kPathMaxRttSpreadMs < 0)
             throw cRuntimeError("kPathMaxRttSpread must be finite and non-negative");
         currentInterval = 0;
@@ -149,6 +156,8 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
         updateModuleIDMappingsClientServer();
         initializeKPathSnapshotConfiguration();
+        if (kPathPingRouting && kPathSnapshotMode != KPathSnapshotMode::Load)
+            throw cRuntimeError("kPathPingRouting requires kPathSnapshotMode=load");
 
         igraph_vector_int_init(&islVec, 0);
     }
@@ -164,8 +173,8 @@ std::filesystem::path LeoIpv4NetworkConfigurator::getRoutingDirectory() const
 std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotDirectory() const
 {
     const std::string profile = leoRouting::makeKPathSnapshotProfileName(
-        leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint), numOfKPaths,
-        kPathMaxRttSpreadMs, configuredKPathEndpointPairs);
+        leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint, kPathMaxSharedLinks), numOfKPaths,
+        kPathMaxRttSpreadMs, kPathMaxSharedLinks, configuredKPathEndpointPairs);
     return getRoutingDirectory() / "kpaths" / kPathSnapshotSet / profile;
 }
 
@@ -1132,6 +1141,7 @@ leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::computeCanonicalKShor
     group.requestedPathCount = numOfKPaths;
     group.maxRttSpreadMs = kPathMaxRttSpreadMs;
     group.edgeDisjoint = kPathsEdgeDisjoint;
+    group.maxSharedCoreLinks = kPathMaxSharedLinks;
     group.topologyGeneration = pathTopologyGeneration;
     group.endpointAttachmentGeneration = endpointAttachmentGeneration;
 
@@ -1152,6 +1162,7 @@ leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::computeCanonicalKShor
         numOfKPaths,
         kPathMaxRttSpreadMs,
         kPathsEdgeDisjoint,
+        kPathMaxSharedLinks,
     };
     group.paths = currentPathTopology.findPaths(group.coreSourceNodeId, group.coreDestinationNodeId,
                                                 options, accessOneWayDelayMs);
@@ -1184,9 +1195,10 @@ void LeoIpv4NetworkConfigurator::generateKPathSnapshot(
     header.routableNodeCount = routeState.sourceCount();
     header.totalNodeCount = static_cast<int32_t>(nodeModules.size());
     header.maxPathCount = numOfKPaths;
-    header.algorithm = leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint);
+    header.algorithm = leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint, kPathMaxSharedLinks);
     header.maxRttSpreadMs = kPathMaxRttSpreadMs;
     header.edgeDisjoint = kPathsEdgeDisjoint;
+    header.maxSharedCoreLinks = kPathMaxSharedLinks;
     header.routeStateHash = routeState.stateHash();
     header.endpointStateHash = leoRouting::computeKPathEndpointStateHash(
         getConfiguredKPathEndpointStates());
@@ -1227,9 +1239,10 @@ void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
         throw cRuntimeError("Endpoint K-path snapshot %s does not match the current node dimensions",
                             path.string().c_str());
     if (snapshot.header.maxPathCount != numOfKPaths ||
-        snapshot.header.algorithm != leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint) ||
+        snapshot.header.algorithm != leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint, kPathMaxSharedLinks) ||
         snapshot.header.maxRttSpreadMs != kPathMaxRttSpreadMs ||
-        snapshot.header.edgeDisjoint != kPathsEdgeDisjoint)
+        snapshot.header.edgeDisjoint != kPathsEdgeDisjoint ||
+        snapshot.header.maxSharedCoreLinks != kPathMaxSharedLinks)
         throw cRuntimeError("Endpoint K-path snapshot %s does not match the configured K-path policy",
                             path.string().c_str());
     if (snapshot.header.routeStateHash != routeState.stateHash())
@@ -1321,6 +1334,100 @@ leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::getKShortestPathGroup
     if (destination == routerIdMap.end())
         throw cRuntimeError("No LEO node mapping exists for destination IPv4 address %d", destinationAddress);
     return getKShortestPathGroup(source->second, destination->second, requestedPathCount);
+}
+
+leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::getKPathPingPathGroup(
+    int pathGroup, int sourceNodeId, int destinationNodeId, int requestedPathCount) const
+{
+    leoRouting::KShortestPathGroup result;
+    if (!tryGetKPathPingPathGroup(pathGroup, sourceNodeId, destinationNodeId,
+                                  requestedPathCount, result))
+        throw cRuntimeError("No current K-path ping catalog is available for endpoint pair (%d,%d)",
+                            sourceNodeId, destinationNodeId);
+    return result;
+}
+
+bool LeoIpv4NetworkConfigurator::tryGetKPathPingPathGroup(
+    int pathGroup, int sourceNodeId, int destinationNodeId, int requestedPathCount,
+    leoRouting::KShortestPathGroup& result) const
+{
+    if (pathGroup < 0 || pathGroup >= static_cast<int>(configuredKPathEndpointPairs.size()))
+        throw cRuntimeError("K-path ping group %d is outside the configured catalog of %zu endpoint pairs",
+                            pathGroup, configuredKPathEndpointPairs.size());
+    const auto expectedPair = configuredKPathEndpointPairs[pathGroup];
+    const auto actualPair = leoRouting::normalizeKPathEndpointPair(sourceNodeId, destinationNodeId);
+    if (actualPair != expectedPair)
+        throw cRuntimeError("K-path ping group %d selects endpoint pair (%d,%d), not (%d,%d)",
+                            pathGroup, expectedPair.first, expectedPair.second,
+                            actualPair.first, actualPair.second);
+    const int pathCount = requestedPathCount < 0 ? numOfKPaths : requestedPathCount;
+    if (pathCount < 1 || pathCount > numOfKPaths)
+        throw cRuntimeError("Requested K-shortest path count %d is outside the configured range 1..%d",
+                            pathCount, numOfKPaths);
+    auto savedGroup = currentKPathGroups.find(
+        leoRouting::kPathEndpointPairKey(sourceNodeId, destinationNodeId));
+    if (savedGroup == currentKPathGroups.end())
+        return false;
+    result = leoRouting::orientKShortestPathGroup(
+        savedGroup->second, sourceNodeId, destinationNodeId, pathCount);
+    return true;
+}
+
+int LeoIpv4NetworkConfigurator::getKPathPingPeerNodeId(int pathGroup, int endpointNodeId) const
+{
+    if (pathGroup < 0 || pathGroup >= static_cast<int>(configuredKPathEndpointPairs.size()))
+        return -1;
+    const auto endpointPair = configuredKPathEndpointPairs[pathGroup];
+    if (endpointNodeId == endpointPair.first)
+        return endpointPair.second;
+    if (endpointNodeId == endpointPair.second)
+        return endpointPair.first;
+    return -1;
+}
+
+int LeoIpv4NetworkConfigurator::getKPathPingNextHopInterface(
+    int currentNodeId, int destinationNodeId, int pathGroup, int pathIndex)
+{
+    if (!kPathPingRouting)
+        return -1;
+    if (pathGroup < 0 || pathGroup >= static_cast<int>(configuredKPathEndpointPairs.size()))
+        return -1;
+    if (pathIndex < 1 || pathIndex > numOfKPaths)
+        return -1;
+
+    const auto endpointPair = configuredKPathEndpointPairs[pathGroup];
+    const bool reverse = destinationNodeId == endpointPair.first;
+    if (!reverse && destinationNodeId != endpointPair.second)
+        return -1;
+
+    auto savedGroup = currentKPathGroups.find(
+        leoRouting::kPathEndpointPairKey(endpointPair.first, endpointPair.second));
+    if (savedGroup == currentKPathGroups.end() ||
+        savedGroup->second.paths.size() < static_cast<size_t>(pathIndex))
+        return -1;
+
+    const std::vector<int32_t>& nodes = savedGroup->second.paths[pathIndex - 1].nodeIds;
+    auto current = std::find(nodes.begin(), nodes.end(), currentNodeId);
+    if (current == nodes.end())
+        return -1;
+    int nextNodeId = -1;
+    if (reverse) {
+        if (current == nodes.begin())
+            return -1;
+        nextNodeId = *std::prev(current);
+    }
+    else {
+        if (std::next(current) == nodes.end())
+            return -1;
+        nextNodeId = *std::next(current);
+    }
+    if (getNodeTypeCode(currentNodeId) == 2)
+        return getEndpointUplinkInterfaceId(currentNodeId);
+    if (getNodeTypeCode(nextNodeId) == 2)
+        return getEndpointAttachmentInterfaceId(nextNodeId);
+
+    const int interfaceId = nextHopInterfaces.get(currentNodeId, nextNodeId);
+    return interfaceId > 0 ? interfaceId : -1;
 }
 
 int LeoIpv4NetworkConfigurator::getEndpointAttachmentInterfaceId(int nodeId) {

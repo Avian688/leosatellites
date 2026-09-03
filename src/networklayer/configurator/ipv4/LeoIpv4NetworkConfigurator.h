@@ -105,10 +105,12 @@ protected:
     std::queue<std::tuple<int, int, double>> groundStationLinks;
     int numOfKPaths;
     bool kPathsEdgeDisjoint = false;
+    int kPathMaxSharedLinks = -1;
     double kPathMaxRttSpreadMs = 5;
     KPathSnapshotMode kPathSnapshotMode = KPathSnapshotMode::Disabled;
     std::string kPathSnapshotSet;
     std::string kPathEndpointPairsSpec;
+    bool kPathPingRouting = false;
     std::vector<std::pair<int32_t, int32_t>> configuredKPathEndpointPairs;
     std::unordered_map<uint64_t, leoRouting::KShortestPathGroup> currentKPathGroups;
     int32_t nextKPathSnapshotSequence = 0;
@@ -186,6 +188,15 @@ public:
         int sourceNodeId, int destinationNodeId, int requestedPathCount = -1) const;
     virtual leoRouting::KShortestPathGroup getKShortestPathGroupForAddresses(
         int sourceAddress, int destinationAddress, int requestedPathCount = -1) const;
+    virtual leoRouting::KShortestPathGroup getKPathPingPathGroup(
+        int pathGroup, int sourceNodeId, int destinationNodeId, int requestedPathCount) const;
+    virtual bool tryGetKPathPingPathGroup(
+        int pathGroup, int sourceNodeId, int destinationNodeId, int requestedPathCount,
+        leoRouting::KShortestPathGroup& result) const;
+    virtual int getKPathPingPeerNodeId(int pathGroup, int endpointNodeId) const;
+    virtual int getKPathPingNextHopInterface(
+        int currentNodeId, int destinationNodeId, int pathGroup, int pathIndex);
+    bool isKPathPingRoutingEnabled() const { return kPathPingRouting; }
 };
 }
 #endif /* NETWORKLAYER_CONFIGURATOR_IPV4_LEOIPV4NETWORKCONFIGURATOR_H_ */

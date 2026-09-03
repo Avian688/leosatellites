@@ -305,38 +305,143 @@ bool candidateLess(const CandidatePath& left, const CandidatePath& right)
     return left.nodeIds < right.nodeIds;
 }
 
-std::vector<KShortestPath> selectRttRange(std::vector<CandidatePath> candidates,
-                                          int32_t pathCount,
-                                          double maxRttSpreadMs,
-                                          double sharedAccessOneWayDelayMs)
+void sortAndDeduplicateCandidates(std::vector<CandidatePath>& candidates)
 {
     std::sort(candidates.begin(), candidates.end(), candidateLess);
     candidates.erase(std::unique(candidates.begin(), candidates.end(), [](const auto& left, const auto& right) {
         return left.nodeIds == right.nodeIds;
     }), candidates.end());
+}
+
+std::vector<uint64_t> normalizedPathEdges(const CandidatePath& path)
+{
+    std::vector<uint64_t> edges;
+    if (path.nodeIds.size() < 2)
+        return edges;
+    edges.reserve(path.nodeIds.size() - 1);
+    for (size_t index = 1; index < path.nodeIds.size(); ++index)
+        edges.push_back(normalizedEdgeKey(path.nodeIds[index - 1], path.nodeIds[index]));
+    std::sort(edges.begin(), edges.end());
+    return edges;
+}
+
+bool sharesAtMost(const std::vector<uint64_t>& candidateEdges,
+                  const std::vector<std::vector<uint64_t>>& selectedPathEdges,
+                  int32_t maxSharedCoreLinks)
+{
+    for (const auto& selectedEdges : selectedPathEdges) {
+        int32_t sharedLinks = 0;
+        size_t candidateIndex = 0;
+        size_t selectedIndex = 0;
+        while (candidateIndex < candidateEdges.size() && selectedIndex < selectedEdges.size()) {
+            if (candidateEdges[candidateIndex] < selectedEdges[selectedIndex])
+                candidateIndex++;
+            else if (selectedEdges[selectedIndex] < candidateEdges[candidateIndex])
+                selectedIndex++;
+            else {
+                sharedLinks++;
+                if (sharedLinks > maxSharedCoreLinks)
+                    return false;
+                candidateIndex++;
+                selectedIndex++;
+            }
+        }
+    }
+    return true;
+}
+
+std::vector<KShortestPath> selectRttRange(const std::vector<CandidatePath>& candidates,
+                                          int32_t pathCount,
+                                          double maxRttSpreadMs,
+                                          double sharedAccessOneWayDelayMs,
+                                          int32_t maxSharedCoreLinks = -1)
+{
     if (candidates.empty())
         return {};
 
     const double shortestRttMs = 2 * (candidates.front().coreOneWayDelayMs + sharedAccessOneWayDelayMs);
     std::vector<KShortestPath> selected;
+    std::vector<std::vector<uint64_t>> selectedPathEdges;
     selected.reserve(std::min(static_cast<size_t>(pathCount), candidates.size()));
+    selectedPathEdges.reserve(std::min(static_cast<size_t>(pathCount), candidates.size()));
     for (const CandidatePath& candidate : candidates) {
         const double oneWayDelayMs = candidate.coreOneWayDelayMs + sharedAccessOneWayDelayMs;
         const double rttMs = 2 * oneWayDelayMs;
         if (rttMs - shortestRttMs > maxRttSpreadMs + DISTANCE_EPSILON_MS)
             break;
+        std::vector<uint64_t> candidateEdges;
+        if (maxSharedCoreLinks >= 0) {
+            candidateEdges = normalizedPathEdges(candidate);
+            if (!sharesAtMost(candidateEdges, selectedPathEdges, maxSharedCoreLinks))
+                continue;
+        }
         selected.push_back({candidate.nodeIds, candidate.coreOneWayDelayMs, oneWayDelayMs, rttMs});
+        if (maxSharedCoreLinks >= 0)
+            selectedPathEdges.push_back(std::move(candidateEdges));
         if (selected.size() == static_cast<size_t>(pathCount))
             break;
     }
     return selected;
 }
 
+std::vector<CandidatePath> findYenCandidates(const igraph_t *topology,
+                                             const igraph_vector_t *edgeWeightsMs,
+                                             int32_t source,
+                                             int32_t destination,
+                                             int32_t candidateCount,
+                                             bool& exhausted)
+{
+    VectorIntListOwner vertexPaths;
+    VectorIntListOwner edgePaths;
+    const igraph_error_t error = igraph_get_k_shortest_paths(topology, edgeWeightsMs,
+                                                             vertexPaths.get(), edgePaths.get(),
+                                                             candidateCount, source, destination, IGRAPH_ALL);
+    if (error != IGRAPH_SUCCESS)
+        throwIgraphError("igraph_get_k_shortest_paths", error);
+
+    const igraph_integer_t vertexPathCount = igraph_vector_int_list_size(vertexPaths.get());
+    const igraph_integer_t edgePathCount = igraph_vector_int_list_size(edgePaths.get());
+    if (vertexPathCount != edgePathCount)
+        throw std::runtime_error("igraph returned different vertex-path and edge-path counts");
+    exhausted = vertexPathCount < candidateCount;
+
+    std::vector<CandidatePath> candidates;
+    candidates.reserve(vertexPathCount);
+    for (igraph_integer_t index = 0; index < vertexPathCount; ++index) {
+        const igraph_vector_int_t *vertices = igraph_vector_int_list_get_ptr(vertexPaths.get(), index);
+        const igraph_vector_int_t *edgesForPath = igraph_vector_int_list_get_ptr(edgePaths.get(), index);
+        if (igraph_vector_int_size(vertices) < 2)
+            continue;
+        if (igraph_vector_int_size(edgesForPath) + 1 != igraph_vector_int_size(vertices))
+            throw std::runtime_error("igraph returned a K-shortest path with inconsistent vertices and edges");
+        if (VECTOR(*vertices)[0] != source ||
+            VECTOR(*vertices)[igraph_vector_int_size(vertices) - 1] != destination) {
+            throw std::runtime_error("igraph returned a K-shortest path with incorrect endpoints");
+        }
+
+        CandidatePath candidate;
+        candidate.nodeIds.reserve(igraph_vector_int_size(vertices));
+        for (igraph_integer_t vertexIndex = 0; vertexIndex < igraph_vector_int_size(vertices); ++vertexIndex)
+            candidate.nodeIds.push_back(static_cast<int32_t>(VECTOR(*vertices)[vertexIndex]));
+        for (igraph_integer_t edgeIndex = 0; edgeIndex < igraph_vector_int_size(edgesForPath); ++edgeIndex) {
+            const int32_t edgeId = static_cast<int32_t>(VECTOR(*edgesForPath)[edgeIndex]);
+            if (edgeId < 0 || edgeId >= igraph_vector_size(edgeWeightsMs))
+                throw std::runtime_error("igraph returned an invalid edge ID in a K-shortest path");
+            candidate.coreOneWayDelayMs += VECTOR(*edgeWeightsMs)[edgeId];
+        }
+        candidates.push_back(std::move(candidate));
+    }
+    sortAndDeduplicateCandidates(candidates);
+    return candidates;
+}
+
 } // namespace
 
-KPathAlgorithm kPathAlgorithmForPolicy(bool edgeDisjoint)
+KPathAlgorithm kPathAlgorithmForPolicy(bool edgeDisjoint, int32_t maxSharedCoreLinks)
 {
-    return edgeDisjoint ? KPathAlgorithm::EdgeDisjointMinCostFlow : KPathAlgorithm::Yen;
+    if (edgeDisjoint)
+        return KPathAlgorithm::EdgeDisjointMinCostFlow;
+    return maxSharedCoreLinks >= 0 ? KPathAlgorithm::YenOverlapLimited : KPathAlgorithm::Yen;
 }
 
 const char *kPathAlgorithmName(KPathAlgorithm algorithm)
@@ -346,6 +451,8 @@ const char *kPathAlgorithmName(KPathAlgorithm algorithm)
             return "yen";
         case KPathAlgorithm::EdgeDisjointMinCostFlow:
             return "edge-disjoint-mincost";
+        case KPathAlgorithm::YenOverlapLimited:
+            return "yen-overlap-limited";
         default:
             throw std::invalid_argument("Unknown endpoint K-path algorithm");
     }
@@ -464,6 +571,10 @@ std::vector<KShortestPath> KShortestPathFinder::findPaths(
         throw std::invalid_argument("K-shortest path count must be positive");
     if (!std::isfinite(options.maxRttSpreadMs) || options.maxRttSpreadMs < 0)
         throw std::invalid_argument("K-shortest path RTT spread must be finite and non-negative");
+    if (options.maxSharedCoreLinks < -1)
+        throw std::invalid_argument("K-shortest path shared-link limit must be -1 or non-negative");
+    if (options.edgeDisjoint && options.maxSharedCoreLinks != -1)
+        throw std::invalid_argument("The shared-link limit applies only to non-edge-disjoint K paths");
     if (!std::isfinite(sharedAccessOneWayDelayMs) || sharedAccessOneWayDelayMs < 0)
         throw std::invalid_argument("Shared access delay must be finite and non-negative");
 
@@ -471,53 +582,34 @@ std::vector<KShortestPath> KShortestPathFinder::findPaths(
         return {{{source}, 0, sharedAccessOneWayDelayMs, 2 * sharedAccessOneWayDelayMs}};
 
     if (options.edgeDisjoint) {
-        return selectRttRange(findEdgeDisjointCandidates(nodeCount(), physicalEdges,
-                                                         physicalEdgeWeightsMs, source, destination,
-                                                         options.pathCount),
-                              options.pathCount, options.maxRttSpreadMs,
+        std::vector<CandidatePath> candidates = findEdgeDisjointCandidates(
+            nodeCount(), physicalEdges, physicalEdgeWeightsMs, source, destination, options.pathCount);
+        sortAndDeduplicateCandidates(candidates);
+        return selectRttRange(candidates, options.pathCount, options.maxRttSpreadMs,
                               sharedAccessOneWayDelayMs);
     }
 
-    VectorIntListOwner vertexPaths;
-    VectorIntListOwner edgePaths;
-    const igraph_error_t error = igraph_get_k_shortest_paths(&topology, &edgeWeightsMs,
-                                                             vertexPaths.get(), edgePaths.get(),
-                                                             options.pathCount, source, destination, IGRAPH_ALL);
-    if (error != IGRAPH_SUCCESS)
-        throwIgraphError("igraph_get_k_shortest_paths", error);
-
-    const igraph_integer_t vertexPathCount = igraph_vector_int_list_size(vertexPaths.get());
-    const igraph_integer_t edgePathCount = igraph_vector_int_list_size(edgePaths.get());
-    if (vertexPathCount != edgePathCount)
-        throw std::runtime_error("igraph returned different vertex-path and edge-path counts");
-    std::vector<CandidatePath> candidates;
-    candidates.reserve(vertexPathCount);
-    for (igraph_integer_t index = 0; index < vertexPathCount; ++index) {
-        const igraph_vector_int_t *vertices = igraph_vector_int_list_get_ptr(vertexPaths.get(), index);
-        const igraph_vector_int_t *edgesForPath = igraph_vector_int_list_get_ptr(edgePaths.get(), index);
-        if (igraph_vector_int_size(vertices) < 2)
-            continue;
-        if (igraph_vector_int_size(edgesForPath) + 1 != igraph_vector_int_size(vertices))
-            throw std::runtime_error("igraph returned a K-shortest path with inconsistent vertices and edges");
-        if (VECTOR(*vertices)[0] != source ||
-            VECTOR(*vertices)[igraph_vector_int_size(vertices) - 1] != destination) {
-            throw std::runtime_error("igraph returned a K-shortest path with incorrect endpoints");
+    int32_t candidateCount = options.pathCount;
+    while (true) {
+        bool exhausted = false;
+        std::vector<CandidatePath> candidates = findYenCandidates(
+            &topology, &edgeWeightsMs, source, destination, candidateCount, exhausted);
+        std::vector<KShortestPath> selected = selectRttRange(
+            candidates, options.pathCount, options.maxRttSpreadMs,
+            sharedAccessOneWayDelayMs, options.maxSharedCoreLinks);
+        if (options.maxSharedCoreLinks < 0 || selected.size() == static_cast<size_t>(options.pathCount) ||
+            exhausted || candidates.empty()) {
+            return selected;
         }
 
-        CandidatePath candidate;
-        candidate.nodeIds.reserve(igraph_vector_int_size(vertices));
-        for (igraph_integer_t vertexIndex = 0; vertexIndex < igraph_vector_int_size(vertices); ++vertexIndex)
-            candidate.nodeIds.push_back(static_cast<int32_t>(VECTOR(*vertices)[vertexIndex]));
-        for (igraph_integer_t edgeIndex = 0; edgeIndex < igraph_vector_int_size(edgesForPath); ++edgeIndex) {
-            const int32_t edgeId = static_cast<int32_t>(VECTOR(*edgesForPath)[edgeIndex]);
-            if (edgeId < 0 || edgeId >= igraph_vector_size(&edgeWeightsMs))
-                throw std::runtime_error("igraph returned an invalid edge ID in a K-shortest path");
-            candidate.coreOneWayDelayMs += VECTOR(edgeWeightsMs)[edgeId];
-        }
-        candidates.push_back(std::move(candidate));
+        const double lastRttMs = 2 * (candidates.back().coreOneWayDelayMs + sharedAccessOneWayDelayMs);
+        const double shortestRttMs = 2 * (candidates.front().coreOneWayDelayMs + sharedAccessOneWayDelayMs);
+        if (lastRttMs - shortestRttMs > options.maxRttSpreadMs + DISTANCE_EPSILON_MS)
+            return selected;
+        if (candidateCount > std::numeric_limits<int32_t>::max() / 2)
+            throw std::overflow_error("Overlap-limited K-shortest path search exceeded its candidate range");
+        candidateCount *= 2;
     }
-    return selectRttRange(std::move(candidates), options.pathCount, options.maxRttSpreadMs,
-                          sharedAccessOneWayDelayMs);
 }
 
 } // namespace leoRouting

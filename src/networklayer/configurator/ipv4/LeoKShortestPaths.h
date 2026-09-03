@@ -19,14 +19,16 @@ struct KShortestPathOptions {
     int32_t pathCount = 1;
     double maxRttSpreadMs = 5.0;
     bool edgeDisjoint = false;
+    int32_t maxSharedCoreLinks = -1;
 };
 
 enum class KPathAlgorithm : int32_t {
     Yen = 1,
     EdgeDisjointMinCostFlow = 2,
+    YenOverlapLimited = 3,
 };
 
-KPathAlgorithm kPathAlgorithmForPolicy(bool edgeDisjoint);
+KPathAlgorithm kPathAlgorithmForPolicy(bool edgeDisjoint, int32_t maxSharedCoreLinks = -1);
 const char *kPathAlgorithmName(KPathAlgorithm algorithm);
 
 struct KShortestPath {
@@ -46,6 +48,7 @@ struct KShortestPathGroup {
     int32_t requestedPathCount = 0;
     double maxRttSpreadMs = 0;
     bool edgeDisjoint = false;
+    int32_t maxSharedCoreLinks = -1;
     std::vector<KShortestPath> paths;
 };
 

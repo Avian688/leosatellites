@@ -7,8 +7,9 @@ ground-station K paths are never generated unless those modules are represented
 by actual end hosts outside the routable core.
 
 The companion files remove Yen calculations from normal protocol runs. They do
-not yet assign MPTCP/MPORB subflows to paths or force packets to follow a saved
-node sequence.
+not assign MPTCP/MPORB subflows to paths. Normal packets still use the primary
+route, while the optional `KShortestPathPingApp` instrumentation can force ICMP
+echo packets over a selected saved node sequence for path-comparison experiments.
 
 ## Generate A Path Set
 
@@ -20,6 +21,7 @@ corpus, and generate one named companion set:
 *.configurator.numOfKPaths = 5
 *.configurator.kPathMaxRttSpread = 5ms
 *.configurator.kPathsEdgeDisjoint = false
+*.configurator.kPathMaxSharedLinks = 2
 
 *.configurator.kPathSnapshotMode = "generate"
 *.configurator.kPathSnapshotSet = "SanDiegoToSeattle_ISL"
@@ -53,6 +55,7 @@ and set name:
 *.configurator.numOfKPaths = 5
 *.configurator.kPathMaxRttSpread = 5ms
 *.configurator.kPathsEdgeDisjoint = false
+*.configurator.kPathMaxSharedLinks = 2
 
 *.configurator.kPathSnapshotMode = "load"
 *.configurator.kPathSnapshotSet = "SanDiegoToSeattle_ISL"
@@ -61,6 +64,34 @@ and set name:
 
 Load mode performs no path calculation. It validates and indexes the complete
 file before replacing the current catalog.
+
+## Probe Saved Paths
+
+`KShortestPathPingApp` extends INET's normal `PingApp` with a zero-based endpoint
+pair group and a one-based path rank:
+
+```ini
+*.configurator.kPathSnapshotMode = "load"
+*.configurator.kPathPingRouting = true
+
+*.userTerminal[0].app[0].typename = "KShortestPathPingApp"
+*.userTerminal[0].app[0].destAddr = "userTerminal[1]"
+*.userTerminal[0].app[0].pathGroup = 0
+*.userTerminal[0].app[0].pathIndex = 1
+```
+
+Pair groups follow the configurator's canonical sorted `kPathEndpointPairs`
+order. The app encodes the group and rank in the ordinary 16-bit ICMP identifier;
+this is experiment control metadata, not extra simulated wire overhead. `LeoIpv4`
+uses the selected snapshot rank at every hop, and the echo reply uses that rank
+in reverse. Each hop consults the currently loaded catalog, so a path that changes
+while a packet is in flight may be dropped. Unavailable ranks and brief catalog
+gaps during a hard handover are also dropped instead of falling back to the
+primary route.
+
+The app emits the measured `rtt` plus `kPathAvailable`, `kPathExpectedRtt`,
+`kPathCoreLinkCount`, and `kPathCatalogSize`. Unmarked ICMP and all other traffic
+remain on normal primary routing.
 
 ## Corpus Layout
 
@@ -74,14 +105,14 @@ changing primary route filenames:
   ...
   kpaths/
     SanDiegoToSeattle_ISL/
-      v2-yen-k5-rtt5ms-pairs-0123456789abcdef/
+      v3-yen-overlap-limited-k5-rtt5ms-shared2-pairs-0123456789abcdef/
         0.bin
         0.100001.bin
         ...
 ```
 
 The final profile directory is generated automatically. It encodes the format
-version, solver, edge-disjoint policy, maximum K, exact RTT-spread value, and a
+version, solver, edge-overlap policy, maximum K, exact RTT-spread value, and a
 stable hash of the configured endpoint-pair set. Changing any path-selection
 parameter therefore selects another directory instead of overwriting an
 incompatible corpus. The hash shown above is illustrative.
@@ -91,14 +122,13 @@ that routing timestamp. For one pair and five paths it contains only five node
 sequences plus metadata, so full companion snapshots are small enough that a
 second delta layer is unnecessary.
 
-Format version 2 uses little-endian 32-bit words. Its fixed header is followed by
+Format version 3 uses little-endian 32-bit words. Its fixed header is followed by
 one canonical unordered endpoint-pair record per configured pair and then each
 path's delay fields and variable-length stable node-ID sequence. Delay values are
 stored using their IEEE 754 binary64 bit representation.
 
-Version 1 companion files used the removed candidate-pool policy and are not
-loaded by this implementation. Regenerate those small companion files; primary
-routing snapshots are unaffected.
+Versions 1 and 2 are not loaded by this implementation. Regenerate those small
+companion files; primary routing snapshots are unaffected.
 
 Different endpoint geometries require different set names. For example, San
 Diego-to-Seattle and London-to-Shanghai cannot share an endpoint path set even
@@ -111,7 +141,7 @@ Every file is atomically published and records:
 
 - Version, sequence, and numeric timestamp.
 - Routable and total node counts.
-- K count, solver identity, RTT range, and edge-disjoint policy.
+- K count, solver identity, RTT range, and edge-overlap policy.
 - The primary route-state hash for the same timestamp.
 - Endpoint attachment and access-delay state.
 - Canonical endpoint pairs, attached core nodes, path delays, and complete node
@@ -143,6 +173,20 @@ queueing, or transport processing time.
 For ordinary K-shortest queries, the installed igraph
 `igraph_get_k_shortest_paths()` implementation uses Yen's algorithm and returns
 loopless weighted paths in increasing length order.
+
+With `kPathsEdgeDisjoint=false`, `kPathMaxSharedLinks` optionally limits partial
+overlap. `-1` preserves unrestricted Yen behavior. A non-negative value requires
+every pair of selected paths to share at most that many undirected physical core
+links; endpoint access links do not count. The shortest path is selected first,
+then later paths are accepted in Yen order when they satisfy the limit against
+every already-selected path. Enumeration continues past rejected candidates
+until K paths are found, Yen is exhausted, or the RTT bound is crossed.
+
+This shortest-first overlap policy is deliberately greedy. In particular,
+`kPathMaxSharedLinks=0` enforces zero pairwise overlap among the paths it returns,
+but it can miss a larger feasible set if the first shortest path blocks it. Use
+`kPathsEdgeDisjoint=true` when exact maximum-cardinality core-edge-disjoint
+selection is required. Do not set `kPathMaxSharedLinks` in that mode.
 
 Edge-disjoint queries use a separate exact min-cost-flow solver. Every undirected
 physical core link has shared unit capacity, so it cannot be used in either
@@ -181,9 +225,7 @@ model must store directions separately.
 
 The query returns a value containing the node sequences, so a transport should
 fetch it once per catalog generation and retain it for its subflows rather than
-calling the API for every packet.
-
-Future transport integration still needs a packet path identifier, source
-routing, segment routing, or per-flow forwarding entries. A first-hop choice
-alone cannot guarantee that downstream routers follow the selected complete
-path.
+calling the API for every packet. The ping-specific identifier and per-hop lookup
+are deliberately measurement instrumentation. Future transport integration still
+needs a general packet path identifier, source routing, segment routing, or
+per-flow forwarding entries.

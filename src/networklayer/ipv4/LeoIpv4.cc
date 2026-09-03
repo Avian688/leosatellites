@@ -17,9 +17,36 @@
 #include <algorithm>
 
 #include <inet/common/ModuleAccess.h>
+#include <inet/networklayer/common/IpProtocolId_m.h>
+#include <inet/networklayer/ipv4/IcmpHeader.h>
+#include "../../applications/pingapp/KShortestPathPingIdentifier.h"
 #include "../configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 
 namespace inet {
+
+static bool getKPathPingSelection(const Packet *packet, const Ptr<const Ipv4Header>& ipv4Header,
+                                  int& pathGroup, int& pathIndex)
+{
+    if (ipv4Header->getProtocolId() != IP_PROT_ICMP)
+        return false;
+    const auto& icmpHeader = packet->peekDataAt<IcmpHeader>(B(ipv4Header->getHeaderLength()));
+    int identifier = -1;
+    if (icmpHeader->getType() == ICMP_ECHO_REQUEST) {
+        const auto& echoRequest = dynamicPtrCast<const IcmpEchoRequest>(icmpHeader);
+        if (echoRequest == nullptr)
+            return false;
+        identifier = echoRequest->getIdentifier();
+    }
+    else if (icmpHeader->getType() == ICMP_ECHO_REPLY) {
+        const auto& echoReply = dynamicPtrCast<const IcmpEchoReply>(icmpHeader);
+        if (echoReply == nullptr)
+            return false;
+        identifier = echoReply->getIdentifier();
+    }
+    else
+        return false;
+    return decodeKPathPingIdentifier(identifier, pathGroup, pathIndex);
+}
 
 Define_Module(LeoIpv4);
 
@@ -122,15 +149,19 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
 
     const int currentNodeType = configurator->getNodeTypeCode(nodeId);
     const int destinationNodeType = configurator->getNodeTypeCode(modId);
-    int interfaceID = (modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[modId] : 0;
-    const int baseInterfaceId = interfaceID;
+    int pathGroup = -1;
+    int pathIndex = -1;
+    const bool useKPath = configurator->isKPathPingRoutingEnabled() &&
+        getKPathPingSelection(packet, ipv4Header, pathGroup, pathIndex);
+    int interfaceID = useKPath ?
+        configurator->getKPathPingNextHopInterface(nodeId, modId, pathGroup, pathIndex) :
+        ((modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[modId] : 0);
     int attachedNodeId = -1;
     int routeToAttachedNodeInterfaceId = -1;
     int endpointAttachmentInterfaceId = -1;
     int currentEndpointUplinkInterfaceId = currentNodeType == 2 ? configurator->getEndpointUplinkInterfaceId(nodeId) : -1;
-    int destinationEndpointUplinkInterfaceId = destinationNodeType == 2 ? configurator->getEndpointUplinkInterfaceId(modId) : -1;
 
-    if (destinationNodeType == 2 && modId >= 0) {
+    if (!useKPath && destinationNodeType == 2 && modId >= 0) {
         attachedNodeId = configurator->getGroundStationFromEndPoint(modId);
         endpointAttachmentInterfaceId = configurator->getEndpointAttachmentInterfaceId(modId);
         routeToAttachedNodeInterfaceId = (attachedNodeId >= 0 && attachedNodeId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[attachedNodeId] : 0;
@@ -144,7 +175,7 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
             interfaceID = routeToAttachedNodeInterfaceId;
         }
     }
-    else if (interfaceID <= 0 && currentNodeType == 2) {
+    else if (!useKPath && interfaceID <= 0 && currentNodeType == 2) {
         interfaceID = currentEndpointUplinkInterfaceId;
     }
 
@@ -152,20 +183,27 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
         packet->addTagIfAbsent<InterfaceReq>()->setInterfaceId(interfaceID);
         hopFound = true;
     }
-    else{
+    else if (!useKPath) {
         EV_WARN << "\nInterface ID not found!: ID " << interfaceID << " at time: " << simTime() << endl;
         std::cout << "\nInterface ID not found!: Dest Addr " << destAddr.getInt() << " Mod ID " << modId << " ID " << interfaceID << " at time: " << simTime() << endl;
     }
     //}
 
     if (!hopFound) {    // no route found
-        EV_WARN << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";
-        std::cout << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";
+        if (useKPath)
+            EV_DETAIL << "selected K path is unavailable, dropping ping\n";
+        else {
+            EV_WARN << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";
+            std::cout << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";
+        }
         numUnroutable++;
         PacketDropDetails details;
         details.setReason(NO_ROUTE_FOUND);
         emit(packetDroppedSignal, packet, &details);
-        sendIcmpError(packet, fromIE ? fromIE->getInterfaceId() : -1, ICMP_DESTINATION_UNREACHABLE, 0);
+        if (useKPath)
+            delete packet;
+        else
+            sendIcmpError(packet, fromIE ? fromIE->getInterfaceId() : -1, ICMP_DESTINATION_UNREACHABLE, 0);
     }
     else {    // fragment and send
         //std::cout << "\n Packet being routed!!" << endl;

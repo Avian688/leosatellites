@@ -68,6 +68,16 @@ std::set<std::pair<int32_t, int32_t>> normalizedEdges(const KShortestPath& path)
     return result;
 }
 
+size_t sharedEdgeCount(const KShortestPath& first, const KShortestPath& second)
+{
+    const auto firstEdges = normalizedEdges(first);
+    const auto secondEdges = normalizedEdges(second);
+    std::vector<std::pair<int32_t, int32_t>> overlap;
+    std::set_intersection(firstEdges.begin(), firstEdges.end(), secondEdges.begin(), secondEdges.end(),
+                          std::back_inserter(overlap));
+    return overlap.size();
+}
+
 void testOrderedPathsAndRttSpread()
 {
     testsRun++;
@@ -112,6 +122,36 @@ void testCoreEdgeDisjointSelection()
     requireNear(paths[1].rttMs, 10.0, "second edge-disjoint path RTT is incorrect");
 }
 
+void testLimitedOverlapSelectionContinuesPastRejectedPaths()
+{
+    testsRun++;
+    KShortestPathFinder finder;
+    finder.reset(7,
+                 {{0, 1}, {1, 2}, {2, 6}, {1, 3}, {3, 6}, {0, 4}, {4, 5}, {5, 6}},
+                 {1.0, 1.0, 1.0, 1.1, 1.1, 1.5, 1.5, 1.5});
+
+    KShortestPathOptions options;
+    options.pathCount = 2;
+    options.maxRttSpreadMs = 10.0;
+    options.maxSharedCoreLinks = 0;
+    const std::vector<KShortestPath> disjoint = finder.findPaths(0, 6, options);
+    require(disjoint.size() == 2, "overlap-limited selection stopped before a later admissible path");
+    require(disjoint[0].nodeIds == std::vector<int32_t>({0, 1, 2, 6}),
+            "overlap-limited selection changed the shortest path");
+    require(disjoint[1].nodeIds == std::vector<int32_t>({0, 4, 5, 6}),
+            "overlap-limited selection did not skip a path with excessive overlap");
+    require(sharedEdgeCount(disjoint[0], disjoint[1]) == 0,
+            "zero-overlap selection returned paths with a shared link");
+
+    options.maxSharedCoreLinks = 1;
+    const std::vector<KShortestPath> oneShared = finder.findPaths(0, 6, options);
+    require(oneShared.size() == 2, "one-link overlap selection returned too few paths");
+    require(oneShared[1].nodeIds == std::vector<int32_t>({0, 1, 3, 6}),
+            "one-link overlap selection did not retain the next admissible path");
+    require(sharedEdgeCount(oneShared[0], oneShared[1]) == 1,
+            "one-link overlap selection returned the wrong overlap");
+}
+
 void testExactEdgeDisjointSelectionAvoidsGreedyTrap()
 {
     testsRun++;
@@ -154,6 +194,17 @@ void testSameNodeAndValidation()
         invalid.maxRttSpreadMs = -1;
         finder.findPaths(0, 5, invalid);
     });
+    expectFailure("invalid shared-link limit was accepted", [&] {
+        KShortestPathOptions invalid = options;
+        invalid.maxSharedCoreLinks = -2;
+        finder.findPaths(0, 5, invalid);
+    });
+    expectFailure("combined edge-disjoint and shared-link policies were accepted", [&] {
+        KShortestPathOptions invalid = options;
+        invalid.edgeDisjoint = true;
+        invalid.maxSharedCoreLinks = 0;
+        finder.findPaths(0, 5, invalid);
+    });
     expectFailure("parallel physical edges were accepted", [&] {
         KShortestPathFinder invalid;
         invalid.reset(3, {{0, 1}, {1, 0}}, {1.0, 1.0});
@@ -171,7 +222,7 @@ void testDisconnectedTopology()
             "disconnected K-shortest query returned a path");
 }
 
-KPathSnapshotHeader makeSnapshotHeader(bool edgeDisjoint = false)
+KPathSnapshotHeader makeSnapshotHeader(bool edgeDisjoint = false, int32_t maxSharedCoreLinks = -1)
 {
     KPathSnapshotHeader header;
     header.sequence = 1;
@@ -179,9 +230,10 @@ KPathSnapshotHeader makeSnapshotHeader(bool edgeDisjoint = false)
     header.routableNodeCount = 6;
     header.totalNodeCount = 8;
     header.maxPathCount = 3;
-    header.algorithm = kPathAlgorithmForPolicy(edgeDisjoint);
+    header.algorithm = kPathAlgorithmForPolicy(edgeDisjoint, maxSharedCoreLinks);
     header.maxRttSpreadMs = 5;
     header.edgeDisjoint = edgeDisjoint;
+    header.maxSharedCoreLinks = maxSharedCoreLinks;
     header.routeStateHash = 0x123456789abcdef0ULL;
     header.endpointStateHash = computeKPathEndpointStateHash({
         {6, 0, 1.0},
@@ -190,7 +242,7 @@ KPathSnapshotHeader makeSnapshotHeader(bool edgeDisjoint = false)
     return header;
 }
 
-KShortestPathGroup makeSnapshotGroup(bool edgeDisjoint = false)
+KShortestPathGroup makeSnapshotGroup(bool edgeDisjoint = false, int32_t maxSharedCoreLinks = -1)
 {
     KShortestPathGroup group;
     group.sourceNodeId = 6;
@@ -200,6 +252,7 @@ KShortestPathGroup makeSnapshotGroup(bool edgeDisjoint = false)
     group.requestedPathCount = 3;
     group.maxRttSpreadMs = 5;
     group.edgeDisjoint = edgeDisjoint;
+    group.maxSharedCoreLinks = maxSharedCoreLinks;
     group.paths = {
         {{6, 0, 1, 5, 7}, 2.0, 4.0, 8.0},
         {{6, 0, 2, 5, 7}, 3.0, 5.0, 10.0},
@@ -213,13 +266,15 @@ void testSnapshotRoundTripAndOrientation()
     const std::filesystem::path directory = temporaryDirectory();
     std::filesystem::remove_all(directory);
     const std::filesystem::path path = directory / "0.1.bin";
-    const KPathSnapshotHeader header = makeSnapshotHeader();
-    const KShortestPathGroup group = makeSnapshotGroup();
+    const KPathSnapshotHeader header = makeSnapshotHeader(false, 1);
+    const KShortestPathGroup group = makeSnapshotGroup(false, 1);
     writeKPathSnapshotAtomic(path, header, {group}, false);
 
     const KPathSnapshot decoded = readKPathSnapshot(path);
     require(decoded.header.sequence == header.sequence, "K-path snapshot sequence changed");
     require(decoded.header.algorithm == header.algorithm, "K-path snapshot algorithm changed");
+    require(decoded.header.maxSharedCoreLinks == header.maxSharedCoreLinks,
+            "K-path snapshot shared-link limit changed");
     require(decoded.header.routeStateHash == header.routeStateHash, "K-path route-state hash changed");
     require(decoded.groups.size() == 1 && decoded.groups[0].paths.size() == 2,
             "K-path snapshot group count changed");
@@ -290,6 +345,12 @@ void testSnapshotValidationFailures()
         invalid.paths[1] = {{6, 0, 1, 2, 5, 7}, 3.0, 5.0, 10.0};
         writeKPathSnapshotAtomic(path, disjointHeader, {invalid}, false);
     });
+    expectFailure("excessive partially-disjoint overlap was accepted", [&] {
+        KPathSnapshotHeader limitedHeader = makeSnapshotHeader(false, 0);
+        KShortestPathGroup invalid = makeSnapshotGroup(false, 0);
+        invalid.paths[1] = {{6, 0, 1, 2, 5, 7}, 3.0, 5.0, 10.0};
+        writeKPathSnapshotAtomic(path, limitedHeader, {invalid}, false);
+    });
 
     writeKPathSnapshotAtomic(path, header, {group}, false);
     std::filesystem::resize_file(path, std::filesystem::file_size(path) - 4);
@@ -332,17 +393,22 @@ void testSnapshotProfileSeparation()
 {
     testsRun++;
     const std::vector<std::pair<int32_t, int32_t>> pairs = {{6, 7}, {8, 9}};
-    const std::string yen = makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 5.0, pairs);
+    const std::string yen = makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 5.0, -1, pairs);
     const std::string edgeDisjoint = makeKPathSnapshotProfileName(
-        KPathAlgorithm::EdgeDisjointMinCostFlow, 5, 5.0, pairs);
+        KPathAlgorithm::EdgeDisjointMinCostFlow, 5, 5.0, -1, pairs);
+    const std::string overlapLimited = makeKPathSnapshotProfileName(
+        KPathAlgorithm::YenOverlapLimited, 5, 5.0, 1, pairs);
     require(yen != edgeDisjoint, "snapshot profile does not encode the path algorithm");
-    require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 4, 5.0, pairs),
+    require(yen != overlapLimited, "snapshot profile does not encode the shared-link policy");
+    require(overlapLimited.find("-shared1-") != std::string::npos,
+            "snapshot profile does not encode the shared-link limit");
+    require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 4, 5.0, -1, pairs),
             "snapshot profile does not encode K");
-    require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 4.5, pairs),
+    require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 4.5, -1, pairs),
             "snapshot profile does not encode the RTT spread");
-    require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 5.0, {{6, 7}}),
+    require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 5.0, -1, {{6, 7}}),
             "snapshot profile does not encode the endpoint pair set");
-    require(yen.find("v2-yen-k5-rtt5ms-pairs-") == 0,
+    require(yen.find("v3-yen-k5-rtt5ms-pairs-") == 0,
             "snapshot profile is not readable or versioned");
 }
 
@@ -353,6 +419,7 @@ int main()
     try {
         testOrderedPathsAndRttSpread();
         testCoreEdgeDisjointSelection();
+        testLimitedOverlapSelectionContinuesPastRejectedPaths();
         testExactEdgeDisjointSelectionAvoidsGreedyTrap();
         testSameNodeAndValidation();
         testDisconnectedTopology();

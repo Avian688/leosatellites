@@ -19,8 +19,8 @@ namespace inet {
 namespace leoRouting {
 
 constexpr int32_t K_PATH_SNAPSHOT_MAGIC = 0x4c454f4b; // "LEOK"
-constexpr int32_t K_PATH_SNAPSHOT_VERSION = 2;
-constexpr int32_t K_PATH_SNAPSHOT_HEADER_WORDS = 22;
+constexpr int32_t K_PATH_SNAPSHOT_VERSION = 3;
+constexpr int32_t K_PATH_SNAPSHOT_HEADER_WORDS = 23;
 
 struct KPathSnapshotHeader {
     int32_t sequence = -1;
@@ -31,6 +31,7 @@ struct KPathSnapshotHeader {
     KPathAlgorithm algorithm = KPathAlgorithm::Yen;
     double maxRttSpreadMs = 0;
     bool edgeDisjoint = false;
+    int32_t maxSharedCoreLinks = -1;
     uint64_t routeStateHash = 0;
     uint64_t endpointStateHash = 0;
     uint64_t payloadHash = 0;
@@ -54,6 +55,7 @@ uint64_t computeKPathEndpointPairSetHash(std::vector<std::pair<int32_t, int32_t>
 std::string makeKPathSnapshotProfileName(KPathAlgorithm algorithm,
                                          int32_t maxPathCount,
                                          double maxRttSpreadMs,
+                                         int32_t maxSharedCoreLinks,
                                          const std::vector<std::pair<int32_t, int32_t>>& pairs);
 uint64_t computeKPathEndpointStateHash(std::vector<KPathEndpointState> states);
 

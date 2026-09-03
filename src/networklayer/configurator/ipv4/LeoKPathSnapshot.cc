@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_set>
+#include <utility>
 
 #include <unistd.h>
 
@@ -141,7 +142,11 @@ void validateHeader(const KPathSnapshotHeader& header)
         throw std::runtime_error("Endpoint K-path snapshot node dimensions are invalid");
     if (header.maxPathCount <= 0)
         throw std::runtime_error("Endpoint K-path snapshot path count must be positive");
-    if (header.algorithm != kPathAlgorithmForPolicy(header.edgeDisjoint))
+    if (header.maxSharedCoreLinks < -1)
+        throw std::runtime_error("Endpoint K-path snapshot shared-link limit is invalid");
+    if (header.edgeDisjoint && header.maxSharedCoreLinks != -1)
+        throw std::runtime_error("Endpoint K-path snapshot combines incompatible disjoint policies");
+    if (header.algorithm != kPathAlgorithmForPolicy(header.edgeDisjoint, header.maxSharedCoreLinks))
         throw std::runtime_error("Endpoint K-path snapshot algorithm does not match its disjoint policy");
     if (!std::isfinite(header.maxRttSpreadMs) || header.maxRttSpreadMs < 0)
         throw std::runtime_error("Endpoint K-path snapshot RTT spread must be finite and non-negative");
@@ -153,7 +158,8 @@ void validateGroup(const KPathSnapshotHeader& header,
 {
     if (group.requestedPathCount != header.maxPathCount ||
         group.maxRttSpreadMs != header.maxRttSpreadMs ||
-        group.edgeDisjoint != header.edgeDisjoint) {
+        group.edgeDisjoint != header.edgeDisjoint ||
+        group.maxSharedCoreLinks != header.maxSharedCoreLinks) {
         throw std::runtime_error("Endpoint K-path group policy does not match its snapshot header");
     }
     if (group.sourceNodeId < header.routableNodeCount ||
@@ -181,7 +187,8 @@ void validateGroup(const KPathSnapshotHeader& header,
     double accessOneWayDelayMs = -1;
     std::vector<std::vector<int32_t>> pathNodeSequences;
     pathNodeSequences.reserve(group.paths.size());
-    std::unordered_set<uint64_t> selectedCoreEdges;
+    std::vector<std::unordered_set<uint64_t>> selectedPathCoreEdges;
+    selectedPathCoreEdges.reserve(group.paths.size());
     for (const KShortestPath& path : group.paths) {
         if (path.nodeIds.size() < 3 ||
             path.nodeIds.size() > static_cast<size_t>(header.routableNodeCount) + 2) {
@@ -229,13 +236,22 @@ void validateGroup(const KPathSnapshotHeader& header,
             if (index + 2 < path.nodeIds.size())
                 pathCoreEdges.insert(normalizedEdgeKey(nodeId, path.nodeIds[index + 1]));
         }
-        if (header.edgeDisjoint) {
-            for (uint64_t edge : pathCoreEdges) {
-                if (selectedCoreEdges.count(edge) != 0)
-                    throw std::runtime_error("Endpoint K-path group is not core-edge-disjoint");
+        const int32_t maxSharedCoreLinks = header.edgeDisjoint ? 0 : header.maxSharedCoreLinks;
+        if (maxSharedCoreLinks >= 0) {
+            for (const auto& selectedCoreEdges : selectedPathCoreEdges) {
+                int32_t sharedCoreLinks = 0;
+                for (uint64_t edge : pathCoreEdges) {
+                    if (selectedCoreEdges.count(edge) != 0)
+                        sharedCoreLinks++;
+                }
+                if (sharedCoreLinks > maxSharedCoreLinks) {
+                    if (header.edgeDisjoint)
+                        throw std::runtime_error("Endpoint K-path group is not core-edge-disjoint");
+                    throw std::runtime_error("Endpoint K-path group exceeds its shared core-link limit");
+                }
             }
-            selectedCoreEdges.insert(pathCoreEdges.begin(), pathCoreEdges.end());
         }
+        selectedPathCoreEdges.push_back(std::move(pathCoreEdges));
     }
 }
 
@@ -330,12 +346,20 @@ std::string makeKPathSnapshotProfileName(
     KPathAlgorithm algorithm,
     int32_t maxPathCount,
     double maxRttSpreadMs,
+    int32_t maxSharedCoreLinks,
     const std::vector<std::pair<int32_t, int32_t>>& pairs)
 {
     if (maxPathCount <= 0)
         throw std::invalid_argument("Endpoint K-path profile count must be positive");
     if (!std::isfinite(maxRttSpreadMs) || maxRttSpreadMs < 0)
         throw std::invalid_argument("Endpoint K-path profile RTT spread must be finite and non-negative");
+    if (maxSharedCoreLinks < -1)
+        throw std::invalid_argument("Endpoint K-path profile shared-link limit must be -1 or non-negative");
+    if ((algorithm == KPathAlgorithm::Yen && maxSharedCoreLinks != -1) ||
+        (algorithm == KPathAlgorithm::YenOverlapLimited && maxSharedCoreLinks < 0) ||
+        (algorithm == KPathAlgorithm::EdgeDisjointMinCostFlow && maxSharedCoreLinks != -1)) {
+        throw std::invalid_argument("Endpoint K-path profile algorithm does not match its shared-link policy");
+    }
     if (pairs.empty())
         throw std::invalid_argument("Endpoint K-path profile must contain at least one endpoint pair");
 
@@ -349,8 +373,10 @@ std::string makeKPathSnapshotProfileName(
     profile << "v" << K_PATH_SNAPSHOT_VERSION
             << "-" << kPathAlgorithmName(algorithm)
             << "-k" << maxPathCount
-            << "-rtt" << rttToken << "ms"
-            << "-pairs-" << std::hex << std::setfill('0') << std::setw(16)
+            << "-rtt" << rttToken << "ms";
+    if (maxSharedCoreLinks >= 0)
+        profile << "-shared" << maxSharedCoreLinks;
+    profile << "-pairs-" << std::hex << std::setfill('0') << std::setw(16)
             << computeKPathEndpointPairSetHash(pairs);
     return profile.str();
 }
@@ -433,19 +459,22 @@ KPathSnapshot readKPathSnapshot(const std::filesystem::path& path)
     if (words[9] != 0 && words[9] != 1)
         throw std::runtime_error("Invalid edge-disjoint flag in " + path.string());
     header.edgeDisjoint = words[9] != 0;
-    header.maxRttSpreadMs = bitsDouble(words[10], words[11]);
-    const int32_t pairCount = words[12];
-    const int32_t declaredPathCount = words[13];
-    const int32_t declaredNodeIdCount = words[14];
-    if (words[15] == static_cast<int32_t>(KPathAlgorithm::Yen))
+    header.maxSharedCoreLinks = words[10];
+    header.maxRttSpreadMs = bitsDouble(words[11], words[12]);
+    const int32_t pairCount = words[13];
+    const int32_t declaredPathCount = words[14];
+    const int32_t declaredNodeIdCount = words[15];
+    if (words[16] == static_cast<int32_t>(KPathAlgorithm::Yen))
         header.algorithm = KPathAlgorithm::Yen;
-    else if (words[15] == static_cast<int32_t>(KPathAlgorithm::EdgeDisjointMinCostFlow))
+    else if (words[16] == static_cast<int32_t>(KPathAlgorithm::EdgeDisjointMinCostFlow))
         header.algorithm = KPathAlgorithm::EdgeDisjointMinCostFlow;
+    else if (words[16] == static_cast<int32_t>(KPathAlgorithm::YenOverlapLimited))
+        header.algorithm = KPathAlgorithm::YenOverlapLimited;
     else
         throw std::runtime_error("Unknown endpoint K-path algorithm in " + path.string());
-    header.routeStateHash = joinUint64(words[16], words[17]);
-    header.endpointStateHash = joinUint64(words[18], words[19]);
-    header.payloadHash = joinUint64(words[20], words[21]);
+    header.routeStateHash = joinUint64(words[17], words[18]);
+    header.endpointStateHash = joinUint64(words[19], words[20]);
+    header.payloadHash = joinUint64(words[21], words[22]);
     validateHeader(header);
     if (pairCount < 0 || declaredPathCount < 0 || declaredNodeIdCount < 0)
         throw std::runtime_error("Negative endpoint K-path snapshot count in " + path.string());
@@ -489,6 +518,7 @@ KPathSnapshot readKPathSnapshot(const std::filesystem::path& path)
         group.requestedPathCount = header.maxPathCount;
         group.maxRttSpreadMs = header.maxRttSpreadMs;
         group.edgeDisjoint = header.edgeDisjoint;
+        group.maxSharedCoreLinks = header.maxSharedCoreLinks;
         group.paths.reserve(pathCount);
         for (int32_t pathIndex = 0; pathIndex < pathCount; ++pathIndex) {
             if (words.size() - offset < PATH_PREFIX_WORDS)
@@ -548,6 +578,7 @@ void writeKPathSnapshotAtomic(const std::filesystem::path& path,
     headerWords.push_back(header.totalNodeCount);
     headerWords.push_back(header.maxPathCount);
     headerWords.push_back(header.edgeDisjoint ? 1 : 0);
+    headerWords.push_back(header.maxSharedCoreLinks);
     appendDouble(headerWords, header.maxRttSpreadMs);
     headerWords.push_back(static_cast<int32_t>(groups.size()));
     headerWords.push_back(totalPathCount);

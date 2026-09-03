@@ -24,10 +24,12 @@ simple LeoIpv4NetworkConfigurator extends L3NetworkConfiguratorBase
         @display("i=block/cogwheel");
         int numOfKPaths = default(1); // Maximum paths saved and returned by the endpoint path catalog
         bool kPathsEdgeDisjoint = default(false); // Disjointness applies to the satellite/ground-station core, not endpoint access links
+        int kPathMaxSharedLinks = default(-1); // Ordinary K paths may share at most this many core links pairwise; -1 disables the limit
         double kPathMaxRttSpread @unit(ms) = default(5ms); // Keep paths no more than this much slower than the shortest RTT
         string kPathSnapshotMode = default("disabled"); // disabled, generate, or load
         string kPathSnapshotSet = default(""); // Named endpoint geometry/path set under the routing corpus kpaths directory
         string kPathEndpointPairs = default("all"); // all end-host pairs, or comma-separated endpointA->endpointB module names
+        bool kPathPingRouting = default(false); // Route marked KShortestPathPingApp packets over their selected saved path
         bool loadFiles = default (true);
         bool allowRouteSnapshotOverwrite = default(false); // Explicit opt-in for regenerating an existing snapshot path
         bool logRouteSnapshotStats = default(false); // Print/read counters for focused benchmarks
