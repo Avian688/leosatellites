@@ -154,9 +154,8 @@ osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createEarthGeometry() const
 {
     constexpr int LATITUDE_SEGMENTS = 64;
     constexpr int LONGITUDE_SEGMENTS = 128;
-    constexpr double PI_VALUE = 3.14159265358979323846;
 
-    osg::ref_ptr<osg::Vec3dArray> vertices = new osg::Vec3dArray();
+    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array();
     osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array();
     osg::ref_ptr<osg::Vec2Array> textureCoordinates = new osg::Vec2Array();
     vertices->reserve((LATITUDE_SEGMENTS + 1) * (LONGITUDE_SEGMENTS + 1));
@@ -165,11 +164,13 @@ osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createEarthGeometry() const
 
     for (int latitudeIndex = 0; latitudeIndex <= LATITUDE_SEGMENTS; ++latitudeIndex) {
         const double latitude = -90.0 + 180.0 * latitudeIndex / LATITUDE_SEGMENTS;
-        const double latitudeRadians = latitude * PI_VALUE / 180.0;
         for (int longitudeIndex = 0; longitudeIndex <= LONGITUDE_SEGMENTS; ++longitudeIndex) {
             const double longitude = -180.0 + 360.0 * longitudeIndex / LONGITUDE_SEGMENTS;
             const osg::Vec3d position = geodeticToWorld(longitude, latitude, 0);
-            vertices->push_back(position);
+            vertices->push_back(osg::Vec3(
+                static_cast<float>(position.x()),
+                static_cast<float>(position.y()),
+                static_cast<float>(position.z())));
             osg::Vec3d normal = position;
             normal.normalize();
             normals->push_back(osg::Vec3(normal.x(), normal.y(), normal.z()));
