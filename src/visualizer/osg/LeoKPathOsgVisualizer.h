@@ -18,8 +18,8 @@
 #include <osg/ref_ptr>
 #include <osgText/Text>
 
-#include "mobility/INorad.h"
-#include "networklayer/configurator/ipv4/LeoKPathSnapshot.h"
+#include "../../mobility/INorad.h"
+#include "../../networklayer/configurator/ipv4/LeoKPathSnapshot.h"
 
 #endif
 

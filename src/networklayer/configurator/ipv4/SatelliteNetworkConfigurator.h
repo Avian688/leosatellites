@@ -63,7 +63,7 @@ class SatelliteNetworkConfigurator : public Ipv4NetworkConfigurator{
         void configureRoutingTable(Node *node);
         virtual void configureAllRoutingTables() override;
         virtual void configureRoutingTable(IIpv4RoutingTable *routingTable) override;
-        virtual void addStaticRoutes(Topology& topology, cXMLElement *element);
+        virtual void addStaticRoutes(Topology& topology, cXMLElement *element) override;
         virtual ~SatelliteNetworkConfigurator(){};
     protected:
         simtime_t timerInterval;
