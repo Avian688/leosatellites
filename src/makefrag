@@ -1,0 +1,3 @@
+ifeq ($(WITH_OSG),yes)
+OMNETPP_LIBS += $(OSG_LIBS) -losgDB -losgText
+endif

@@ -50,7 +50,8 @@ OBJS = \
     $O/networklayer/configurator/ipv4/SatelliteNodeConfigurator.o \
     $O/networklayer/ipv4/LeoIpv4.o \
     $O/networklayer/ipv4/LeoIpv4NetworkLayer.o \
-    $O/networklayer/ipv4/LeoIpv4RoutingTable.o
+    $O/networklayer/ipv4/LeoIpv4RoutingTable.o \
+    $O/visualizer/osg/LeoKPathOsgVisualizer.o
 
 # Message files
 MSGFILES =
