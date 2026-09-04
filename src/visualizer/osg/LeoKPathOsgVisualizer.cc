@@ -39,15 +39,19 @@ void LeoKPathOsgVisualizer::initialize(int stage)
         numGroundStations = par("numGroundStations");
         numClients = par("numClients");
         numUserTerminals = par("numUserTerminals");
+        satellitesPerPlane = par("satellitesPerPlane");
         pathCount = par("pathCount");
         pairIndex = par("pairIndex");
         maxSharedLinks = par("maxSharedLinks");
         edgeDisjoint = par("edgeDisjoint");
+        showInterSatelliteLinks = par("showInterSatelliteLinks");
         updateInterval = par("updateInterval");
         policyLabel = par("policyLabel").stdstringValue();
 
         if (pathCount < 1 || pathCount > 10)
             throw omnetpp::cRuntimeError("pathCount must be between 1 and 10");
+        if (showInterSatelliteLinks && satellitesPerPlane < 1)
+            throw omnetpp::cRuntimeError("satellitesPerPlane must be positive when ISLs are shown");
         if (updateInterval <= omnetpp::SimTime::ZERO)
             throw omnetpp::cRuntimeError("updateInterval must be positive");
         if (edgeDisjoint && maxSharedLinks != -1)
@@ -63,6 +67,7 @@ void LeoKPathOsgVisualizer::initialize(int stage)
     }
     else if (stage == 1) {
         initializeConstellation();
+        initializeInterSatelliteLinks();
         initializeStaticNodes();
         initializeLegend();
         updateVisualization();
@@ -303,6 +308,51 @@ void LeoKPathOsgVisualizer::initializeConstellation()
     }
 }
 
+void LeoKPathOsgVisualizer::initializeInterSatelliteLinks()
+{
+    if (!showInterSatelliteLinks)
+        return;
+
+    interSatelliteLinks.reserve(2 * numSatellites);
+    for (int satellite = 0; satellite < numSatellites; ++satellite) {
+        const int plane = satellite / satellitesPerPlane;
+        int nextInPlane = (satellite + 1) % (satellitesPerPlane * (plane + 1));
+        if (nextInPlane == 0)
+            nextInPlane = plane * satellitesPerPlane;
+        if (nextInPlane < numSatellites)
+            interSatelliteLinks.emplace_back(satellite, nextInPlane);
+
+        const int nextPlane = satellite + satellitesPerPlane;
+        if (nextPlane < numSatellites)
+            interSatelliteLinks.emplace_back(satellite, nextPlane);
+    }
+
+    interSatelliteLinkVertices = new osg::Vec3Array();
+    interSatelliteLinkVertices->resize(2 * interSatelliteLinks.size());
+    interSatelliteLinkGeometry = new osg::Geometry();
+    interSatelliteLinkGeometry->setVertexArray(interSatelliteLinkVertices);
+    interSatelliteLinkGeometry->addPrimitiveSet(
+        new osg::DrawArrays(GL_LINES, 0, interSatelliteLinkVertices->size()));
+
+    osg::ref_ptr<osg::Vec4Array> colors = new osg::Vec4Array();
+    colors->push_back(osg::Vec4(0.45f, 0.60f, 0.72f, 0.28f));
+    interSatelliteLinkGeometry->setColorArray(colors, osg::Array::BIND_OVERALL);
+    interSatelliteLinkGeometry->setDataVariance(osg::Object::DYNAMIC);
+    interSatelliteLinkGeometry->setUseDisplayList(false);
+    interSatelliteLinkGeometry->setUseVertexBufferObjects(true);
+
+    osg::StateSet *stateSet = interSatelliteLinkGeometry->getOrCreateStateSet();
+    stateSet->setAttributeAndModes(new osg::LineWidth(1.0f), osg::StateAttribute::ON);
+    stateSet->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
+    stateSet->setMode(GL_BLEND, osg::StateAttribute::ON);
+    stateSet->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
+    stateSet->setRenderBinDetails(10, "RenderBin");
+
+    osg::ref_ptr<osg::Geode> geode = new osg::Geode();
+    geode->addDrawable(interSatelliteLinkGeometry);
+    scene->addChild(geode);
+}
+
 void LeoKPathOsgVisualizer::initializeStaticNodes()
 {
     const double groundAltitude = par("groundMarkerAltitude").doubleValueInUnit("m");
@@ -450,6 +500,7 @@ void LeoKPathOsgVisualizer::updateVisualization()
     satelliteVertices->dirty();
     if (satelliteGeometry)
         satelliteGeometry->dirtyBound();
+    updateInterSatelliteLinks();
 
     const int32_t endpointStart = numSatellites + numGroundStations + 2 * numClients;
     const auto [sourceTerminal, destinationTerminal] = terminalPairs[pairIndex];
@@ -475,6 +526,28 @@ void LeoKPathOsgVisualizer::updateVisualization()
 
     EV_INFO << "Displaying " << policyLabel << ", pair " << pairIndex + 1
             << ", snapshot " << snapshotTime << ", " << visiblePaths << " paths" << std::endl;
+}
+
+void LeoKPathOsgVisualizer::updateInterSatelliteLinks()
+{
+    if (!interSatelliteLinkVertices)
+        return;
+
+    for (size_t index = 0; index < interSatelliteLinks.size(); ++index) {
+        const auto [sourceIndex, destinationIndex] = interSatelliteLinks[index];
+        const osg::Vec3d& source = satellitePositions[sourceIndex];
+        const osg::Vec3d& destination = satellitePositions[destinationIndex];
+        (*interSatelliteLinkVertices)[2 * index].set(
+            static_cast<float>(source.x()),
+            static_cast<float>(source.y()),
+            static_cast<float>(source.z()));
+        (*interSatelliteLinkVertices)[2 * index + 1].set(
+            static_cast<float>(destination.x()),
+            static_cast<float>(destination.y()),
+            static_cast<float>(destination.z()));
+    }
+    interSatelliteLinkVertices->dirty();
+    interSatelliteLinkGeometry->dirtyBound();
 }
 
 osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createPathGeometry(

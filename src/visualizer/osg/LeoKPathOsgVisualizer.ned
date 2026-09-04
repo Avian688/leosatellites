@@ -13,6 +13,7 @@ simple LeoKPathOsgVisualizer
         int numGroundStations;
         int numClients = default(0);
         int numUserTerminals;
+        int satellitesPerPlane;
         int pathCount = default(10);
         int pairIndex = default(0);
         bool edgeDisjoint = default(false);
@@ -25,6 +26,7 @@ simple LeoKPathOsgVisualizer
         double cameraLatitude = default(20);
         double cameraDistance @unit(m) = default(26000000m);
         bool showSatellites = default(true);
+        bool showInterSatelliteLinks = default(true);
         bool showGroundStations = default(true);
         bool showUserTerminals = default(true);
         double satellitePointSize = default(2.5);

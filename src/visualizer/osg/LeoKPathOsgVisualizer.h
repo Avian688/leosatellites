@@ -40,10 +40,12 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
     int numGroundStations = 0;
     int numClients = 0;
     int numUserTerminals = 0;
+    int satellitesPerPlane = 0;
     int pathCount = 0;
     int pairIndex = 0;
     int maxSharedLinks = -1;
     bool edgeDisjoint = false;
+    bool showInterSatelliteLinks = true;
     omnetpp::simtime_t updateInterval;
     std::string policyLabel;
     std::vector<std::pair<int32_t, int32_t>> terminalPairs;
@@ -51,6 +53,7 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
 
     std::vector<::INorad *> satelliteOrbits;
     std::vector<osg::Vec3d> satellitePositions;
+    std::vector<std::pair<int, int>> interSatelliteLinks;
     std::vector<osg::Vec3d> groundStationPositions;
     std::vector<osg::Vec3d> userTerminalPositions;
 
@@ -59,16 +62,20 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
     osg::ref_ptr<osg::Geode> selectedEndpointGeode;
     osg::ref_ptr<osg::Geometry> satelliteGeometry;
     osg::ref_ptr<osg::Vec3dArray> satelliteVertices;
+    osg::ref_ptr<osg::Geometry> interSatelliteLinkGeometry;
+    osg::ref_ptr<osg::Vec3Array> interSatelliteLinkVertices;
     osg::ref_ptr<osgText::Text> headerText;
     std::vector<osg::ref_ptr<osgText::Text>> rankTexts;
 
     void initializeScene();
     void initializeConstellation();
+    void initializeInterSatelliteLinks();
     void initializeStaticNodes();
     void initializeLegend();
     void discoverSnapshots();
     void parseEndpointPairs();
     void updateVisualization();
+    void updateInterSatelliteLinks();
     int findSnapshotIndex(omnetpp::simtime_t time) const;
     osg::Vec3d positionForNode(int32_t nodeId) const;
     osg::ref_ptr<osg::Geometry> createPointGeometry(osg::Vec3dArray *vertices,
