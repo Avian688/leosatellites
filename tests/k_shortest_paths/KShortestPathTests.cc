@@ -152,6 +152,26 @@ void testLimitedOverlapSelectionContinuesPastRejectedPaths()
             "one-link overlap selection returned the wrong overlap");
 }
 
+void testLimitedOverlapSelectionStopsAtCandidateLimit()
+{
+    testsRun++;
+    KShortestPathFinder finder;
+    finder.reset(7,
+                 {{0, 1}, {1, 2}, {2, 6}, {1, 3}, {3, 6}, {0, 4}, {4, 5}, {5, 6}},
+                 {1.0, 1.0, 1.0, 1.1, 1.1, 1.5, 1.5, 1.5});
+
+    KShortestPathOptions options;
+    options.pathCount = 2;
+    options.maxRttSpreadMs = 10.0;
+    options.maxSharedCoreLinks = 0;
+    options.maxCandidatePaths = 2;
+    const std::vector<KShortestPath> paths = finder.findPaths(0, 6, options);
+    require(paths.size() == 1,
+            "overlap-limited selection searched beyond its candidate limit");
+    require(paths[0].nodeIds == std::vector<int32_t>({0, 1, 2, 6}),
+            "bounded overlap selection changed the shortest path");
+}
+
 void testExactEdgeDisjointSelectionAvoidsGreedyTrap()
 {
     testsRun++;
@@ -203,6 +223,13 @@ void testSameNodeAndValidation()
         KShortestPathOptions invalid = options;
         invalid.edgeDisjoint = true;
         invalid.maxSharedCoreLinks = 0;
+        finder.findPaths(0, 5, invalid);
+    });
+    expectFailure("candidate limit below the requested overlap-limited count was accepted", [&] {
+        KShortestPathOptions invalid = options;
+        invalid.pathCount = 4;
+        invalid.maxSharedCoreLinks = 1;
+        invalid.maxCandidatePaths = 3;
         finder.findPaths(0, 5, invalid);
     });
     expectFailure("parallel physical edges were accepted", [&] {
@@ -402,6 +429,8 @@ void testSnapshotProfileSeparation()
     require(yen != overlapLimited, "snapshot profile does not encode the shared-link policy");
     require(overlapLimited.find("-shared1-") != std::string::npos,
             "snapshot profile does not encode the shared-link limit");
+    require(overlapLimited.find("-candidates256-") != std::string::npos,
+            "snapshot profile does not encode the overlap candidate limit");
     require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 4, 5.0, -1, pairs),
             "snapshot profile does not encode K");
     require(yen != makeKPathSnapshotProfileName(KPathAlgorithm::Yen, 5, 4.5, -1, pairs),
@@ -420,6 +449,7 @@ int main()
         testOrderedPathsAndRttSpread();
         testCoreEdgeDisjointSelection();
         testLimitedOverlapSelectionContinuesPastRejectedPaths();
+        testLimitedOverlapSelectionStopsAtCandidateLimit();
         testExactEdgeDisjointSelectionAvoidsGreedyTrap();
         testSameNodeAndValidation();
         testDisconnectedTopology();

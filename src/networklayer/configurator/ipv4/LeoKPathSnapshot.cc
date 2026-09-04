@@ -376,6 +376,8 @@ std::string makeKPathSnapshotProfileName(
             << "-rtt" << rttToken << "ms";
     if (maxSharedCoreLinks >= 0)
         profile << "-shared" << maxSharedCoreLinks;
+    if (algorithm == KPathAlgorithm::YenOverlapLimited)
+        profile << "-candidates" << DEFAULT_MAX_OVERLAP_CANDIDATE_PATHS;
     profile << "-pairs-" << std::hex << std::setfill('0') << std::setw(16)
             << computeKPathEndpointPairSetHash(pairs);
     return profile.str();

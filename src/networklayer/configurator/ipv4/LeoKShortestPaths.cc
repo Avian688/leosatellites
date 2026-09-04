@@ -575,6 +575,8 @@ std::vector<KShortestPath> KShortestPathFinder::findPaths(
         throw std::invalid_argument("K-shortest path shared-link limit must be -1 or non-negative");
     if (options.edgeDisjoint && options.maxSharedCoreLinks != -1)
         throw std::invalid_argument("The shared-link limit applies only to non-edge-disjoint K paths");
+    if (options.maxSharedCoreLinks >= 0 && options.maxCandidatePaths < options.pathCount)
+        throw std::invalid_argument("Overlap-limited candidate count must cover the requested path count");
     if (!std::isfinite(sharedAccessOneWayDelayMs) || sharedAccessOneWayDelayMs < 0)
         throw std::invalid_argument("Shared access delay must be finite and non-negative");
 
@@ -606,9 +608,10 @@ std::vector<KShortestPath> KShortestPathFinder::findPaths(
         const double shortestRttMs = 2 * (candidates.front().coreOneWayDelayMs + sharedAccessOneWayDelayMs);
         if (lastRttMs - shortestRttMs > options.maxRttSpreadMs + DISTANCE_EPSILON_MS)
             return selected;
-        if (candidateCount > std::numeric_limits<int32_t>::max() / 2)
-            throw std::overflow_error("Overlap-limited K-shortest path search exceeded its candidate range");
-        candidateCount *= 2;
+        if (candidateCount >= options.maxCandidatePaths)
+            return selected;
+        candidateCount = candidateCount > options.maxCandidatePaths / 2 ?
+            options.maxCandidatePaths : candidateCount * 2;
     }
 }
 

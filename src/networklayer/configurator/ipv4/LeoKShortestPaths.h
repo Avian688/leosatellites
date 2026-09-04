@@ -15,11 +15,14 @@
 namespace inet {
 namespace leoRouting {
 
+constexpr int32_t DEFAULT_MAX_OVERLAP_CANDIDATE_PATHS = 256;
+
 struct KShortestPathOptions {
     int32_t pathCount = 1;
     double maxRttSpreadMs = 5.0;
     bool edgeDisjoint = false;
     int32_t maxSharedCoreLinks = -1;
+    int32_t maxCandidatePaths = DEFAULT_MAX_OVERLAP_CANDIDATE_PATHS;
 };
 
 enum class KPathAlgorithm : int32_t {

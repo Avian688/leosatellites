@@ -1163,6 +1163,7 @@ leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::computeCanonicalKShor
         kPathMaxRttSpreadMs,
         kPathsEdgeDisjoint,
         kPathMaxSharedLinks,
+        leoRouting::DEFAULT_MAX_OVERLAP_CANDIDATE_PATHS,
     };
     group.paths = currentPathTopology.findPaths(group.coreSourceNodeId, group.coreDestinationNodeId,
                                                 options, accessOneWayDelayMs);

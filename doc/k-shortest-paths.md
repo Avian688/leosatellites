@@ -105,17 +105,18 @@ changing primary route filenames:
   ...
   kpaths/
     SanDiegoToSeattle_ISL/
-      v3-yen-overlap-limited-k5-rtt5ms-shared2-pairs-0123456789abcdef/
+      v3-yen-overlap-limited-k5-rtt5ms-shared2-candidates256-pairs-0123456789abcdef/
         0.bin
         0.100001.bin
         ...
 ```
 
 The final profile directory is generated automatically. It encodes the format
-version, solver, edge-overlap policy, maximum K, exact RTT-spread value, and a
-stable hash of the configured endpoint-pair set. Changing any path-selection
-parameter therefore selects another directory instead of overwriting an
-incompatible corpus. The hash shown above is illustrative.
+version, solver, edge-overlap policy, overlap candidate budget, maximum K,
+exact RTT-spread value, and a stable hash of the configured endpoint-pair set.
+Changing any path-selection parameter therefore selects another directory
+instead of overwriting an incompatible corpus. The hash shown above is
+illustrative.
 
 Each file is a complete, versioned snapshot for the configured endpoint pairs at
 that routing timestamp. For one pair and five paths it contains only five node
@@ -180,7 +181,11 @@ every pair of selected paths to share at most that many undirected physical core
 links; endpoint access links do not count. The shortest path is selected first,
 then later paths are accepted in Yen order when they satisfy the limit against
 every already-selected path. Enumeration continues past rejected candidates
-until K paths are found, Yen is exhausted, or the RTT bound is crossed.
+until K paths are found, Yen is exhausted, the RTT bound is crossed, or the
+first 256 Yen candidates have been examined. The result therefore contains up
+to K paths. Reaching the candidate budget means that no further qualifying path
+was found within that bounded shortest-path set; it does not prove that no
+qualifying path exists anywhere in the graph.
 
 This shortest-first overlap policy is deliberately greedy. In particular,
 `kPathMaxSharedLinks=0` enforces zero pairwise overlap among the paths it returns,
