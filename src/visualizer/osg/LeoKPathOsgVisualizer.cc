@@ -48,7 +48,7 @@ void LeoKPathOsgVisualizer::initialize(int stage)
 
         if (pathCount < 1 || pathCount > 10)
             throw omnetpp::cRuntimeError("pathCount must be between 1 and 10");
-        if (updateInterval <= omnetpp::SIMTIME_ZERO)
+        if (updateInterval <= omnetpp::SimTime::ZERO)
             throw omnetpp::cRuntimeError("updateInterval must be positive");
         if (edgeDisjoint && maxSharedLinks != -1)
             throw omnetpp::cRuntimeError("maxSharedLinks must be -1 for the edge-disjoint policy");
@@ -134,9 +134,9 @@ void LeoKPathOsgVisualizer::initializeScene()
         eyeDirection.normalize();
     }
     else {
-        constexpr double PI = 3.14159265358979323846;
-        const double longitude = par("cameraLongitude").doubleValue() * PI / 180.0;
-        const double latitude = par("cameraLatitude").doubleValue() * PI / 180.0;
+        constexpr double PI_VALUE = 3.14159265358979323846;
+        const double longitude = par("cameraLongitude").doubleValue() * PI_VALUE / 180.0;
+        const double latitude = par("cameraLatitude").doubleValue() * PI_VALUE / 180.0;
         eyeDirection.set(std::cos(latitude) * std::cos(longitude),
                          std::cos(latitude) * std::sin(longitude),
                          std::sin(latitude));
@@ -154,7 +154,7 @@ osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createEarthGeometry() const
 {
     constexpr int LATITUDE_SEGMENTS = 64;
     constexpr int LONGITUDE_SEGMENTS = 128;
-    constexpr double PI = 3.14159265358979323846;
+    constexpr double PI_VALUE = 3.14159265358979323846;
 
     osg::ref_ptr<osg::Vec3dArray> vertices = new osg::Vec3dArray();
     osg::ref_ptr<osg::Vec3Array> normals = new osg::Vec3Array();
@@ -165,7 +165,7 @@ osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createEarthGeometry() const
 
     for (int latitudeIndex = 0; latitudeIndex <= LATITUDE_SEGMENTS; ++latitudeIndex) {
         const double latitude = -90.0 + 180.0 * latitudeIndex / LATITUDE_SEGMENTS;
-        const double latitudeRadians = latitude * PI / 180.0;
+        const double latitudeRadians = latitude * PI_VALUE / 180.0;
         for (int longitudeIndex = 0; longitudeIndex <= LONGITUDE_SEGMENTS; ++longitudeIndex) {
             const double longitude = -180.0 + 360.0 * longitudeIndex / LONGITUDE_SEGMENTS;
             const osg::Vec3d position = geodeticToWorld(longitude, latitude, 0);
@@ -288,7 +288,7 @@ void LeoKPathOsgVisualizer::initializeConstellation()
             throw omnetpp::cRuntimeError("Missing satellite[%d]", index);
         auto *orbit = omnetpp::check_and_cast<::INorad *>(satellite->getSubmodule("NoradModule"));
         orbit->setJulian(epochUtc);
-        orbit->initializeMobility(omnetpp::SIMTIME_ZERO);
+        orbit->initializeMobility(omnetpp::SimTime::ZERO);
         satelliteOrbits.push_back(orbit);
     }
 
@@ -571,11 +571,11 @@ osg::Vec3d LeoKPathOsgVisualizer::positionForNode(int32_t nodeId) const
 osg::Vec3d LeoKPathOsgVisualizer::geodeticToWorld(
     double longitudeDegrees, double latitudeDegrees, double altitudeMeters)
 {
-    constexpr double PI = 3.14159265358979323846;
+    constexpr double PI_VALUE = 3.14159265358979323846;
     constexpr double WGS84_A = 6378137.0;
     constexpr double WGS84_E2 = 6.69437999014e-3;
-    const double longitude = longitudeDegrees * PI / 180.0;
-    const double latitude = latitudeDegrees * PI / 180.0;
+    const double longitude = longitudeDegrees * PI_VALUE / 180.0;
+    const double latitude = latitudeDegrees * PI_VALUE / 180.0;
     const double sinLatitude = std::sin(latitude);
     const double cosLatitude = std::cos(latitude);
     const double radius = WGS84_A / std::sqrt(1.0 - WGS84_E2 * sinLatitude * sinLatitude);
