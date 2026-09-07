@@ -300,7 +300,7 @@ void LeoKPathOsgVisualizer::initializeConstellation()
 
     if (par("showSatellites")) {
         satelliteGeometry = createPointGeometry(
-            satelliteVertices, osg::Vec4(0.72f, 0.78f, 0.86f, 0.8f),
+            satelliteVertices, osg::Vec4(0.90f, 0.95f, 1.0f, 1.0f),
             static_cast<float>(par("satellitePointSize").doubleValue()), true);
         osg::ref_ptr<osg::Geode> satelliteGeode = new osg::Geode();
         satelliteGeode->addDrawable(satelliteGeometry);
@@ -335,14 +335,14 @@ void LeoKPathOsgVisualizer::initializeInterSatelliteLinks()
         new osg::DrawArrays(GL_LINES, 0, interSatelliteLinkVertices->size()));
 
     osg::ref_ptr<osg::Vec4Array> colors = new osg::Vec4Array();
-    colors->push_back(osg::Vec4(0.45f, 0.60f, 0.72f, 0.28f));
+    colors->push_back(osg::Vec4(0.55f, 0.75f, 0.95f, 1.0f));
     interSatelliteLinkGeometry->setColorArray(colors, osg::Array::BIND_OVERALL);
     interSatelliteLinkGeometry->setDataVariance(osg::Object::DYNAMIC);
     interSatelliteLinkGeometry->setUseDisplayList(false);
     interSatelliteLinkGeometry->setUseVertexBufferObjects(true);
 
     osg::StateSet *stateSet = interSatelliteLinkGeometry->getOrCreateStateSet();
-    stateSet->setAttributeAndModes(new osg::LineWidth(1.0f), osg::StateAttribute::ON);
+    stateSet->setAttributeAndModes(new osg::LineWidth(2.0f), osg::StateAttribute::ON);
     stateSet->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
     stateSet->setMode(GL_BLEND, osg::StateAttribute::ON);
     stateSet->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);

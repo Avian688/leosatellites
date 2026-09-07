@@ -29,7 +29,7 @@ simple LeoKPathOsgVisualizer
         bool showInterSatelliteLinks = default(true);
         bool showGroundStations = default(true);
         bool showUserTerminals = default(true);
-        double satellitePointSize = default(2.5);
+        double satellitePointSize = default(6); // screen pixels
         double groundStationPointSize = default(5);
         double userTerminalPointSize = default(8);
         double selectedEndpointPointSize = default(14);
