@@ -42,6 +42,7 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
     int numUserTerminals = 0;
     int satellitesPerPlane = 0;
     int pathCount = 0;
+    int displayedPathCount = 0;
     int pairIndex = 0;
     int maxSharedLinks = -1;
     bool edgeDisjoint = false;

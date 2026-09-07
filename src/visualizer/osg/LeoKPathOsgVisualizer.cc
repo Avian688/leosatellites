@@ -50,6 +50,10 @@ void LeoKPathOsgVisualizer::initialize(int stage)
 
         if (pathCount < 1 || pathCount > 10)
             throw omnetpp::cRuntimeError("pathCount must be between 1 and 10");
+        if (par("shortestPathOnly") && (edgeDisjoint || maxSharedLinks != -1))
+            throw omnetpp::cRuntimeError("shortestPathOnly requires the unrestricted path catalog");
+        // Keep pathCount unchanged: it also identifies the saved catalog profile.
+        displayedPathCount = par("shortestPathOnly") ? 1 : pathCount;
         if (showInterSatelliteLinks && satellitesPerPlane < 1)
             throw omnetpp::cRuntimeError("satellitesPerPlane must be positive when ISLs are shown");
         if (updateInterval <= omnetpp::SimTime::ZERO)
@@ -450,7 +454,7 @@ void LeoKPathOsgVisualizer::initializeLegend()
     headerText->setBackdropColor(osg::Vec4(0, 0, 0, 1));
     textGeode->addDrawable(headerText);
 
-    for (int rank = 0; rank < pathCount; ++rank) {
+    for (int rank = 0; rank < displayedPathCount; ++rank) {
         osg::ref_ptr<osgText::Text> text = new osgText::Text();
         text->setPosition(osg::Vec3(25, 970 - rank * 34, 0));
         text->setAlignment(osgText::Text::LEFT_TOP);
@@ -517,7 +521,7 @@ void LeoKPathOsgVisualizer::updateVisualization()
                                     sourceNodeId, destinationNodeId);
 
     pathGeode->removeDrawables(0, pathGeode->getNumDrawables());
-    const int visiblePaths = std::min(pathCount, static_cast<int>(group->paths.size()));
+    const int visiblePaths = std::min(displayedPathCount, static_cast<int>(group->paths.size()));
     for (int rank = visiblePaths - 1; rank >= 0; --rank)
         pathGeode->addDrawable(createPathGeometry(group->paths[rank], rank));
 
@@ -572,7 +576,7 @@ osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createPathGeometry(
     stateSet->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
     stateSet->setMode(GL_BLEND, osg::StateAttribute::ON);
     stateSet->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
-    stateSet->setRenderBinDetails(100 + (pathCount - rank), "RenderBin");
+    stateSet->setRenderBinDetails(100 + (displayedPathCount - rank), "RenderBin");
     return geometry;
 }
 
@@ -600,13 +604,14 @@ void LeoKPathOsgVisualizer::updateLegend(
     const char *sourceLabel = getParentModule()->getSubmodule("userTerminal", sourceIndex)->par("label");
     const char *destinationLabel = getParentModule()->getSubmodule("userTerminal", destinationIndex)->par("label");
 
+    const int visiblePaths = std::min(displayedPathCount, static_cast<int>(group.paths.size()));
     std::ostringstream header;
     header << policyLabel << " | " << sourceLabel << " -> " << destinationLabel << "\n"
-           << "Snapshot " << snapshotTime << " | " << group.paths.size() << "/" << pathCount
+           << "Snapshot " << snapshotTime << " | " << visiblePaths << "/" << displayedPathCount
            << " ranked paths";
     headerText->setText(header.str());
 
-    for (int rank = 0; rank < pathCount; ++rank) {
+    for (int rank = 0; rank < displayedPathCount; ++rank) {
         std::ostringstream line;
         line << "Rank " << rank + 1 << "  ";
         if (rank < static_cast<int>(group.paths.size())) {
@@ -621,7 +626,7 @@ void LeoKPathOsgVisualizer::updateLegend(
 
     std::ostringstream status;
     status << policyLabel << ": " << sourceLabel << " to " << destinationLabel
-           << ", " << group.paths.size() << "/" << pathCount << " paths";
+           << ", " << visiblePaths << "/" << displayedPathCount << " paths";
     getDisplayString().setTagArg("t", 0, status.str().c_str());
 }
 

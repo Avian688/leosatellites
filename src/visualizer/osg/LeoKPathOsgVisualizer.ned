@@ -15,6 +15,7 @@ simple LeoKPathOsgVisualizer
         int numUserTerminals;
         int satellitesPerPlane;
         int pathCount = default(10);
+        bool shortestPathOnly = default(false); // display rank 1 from the unrestricted catalog
         int pairIndex = default(0);
         bool edgeDisjoint = default(false);
         int maxSharedLinks = default(-1);
