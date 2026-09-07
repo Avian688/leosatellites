@@ -342,7 +342,7 @@ void LeoKPathOsgVisualizer::initializeInterSatelliteLinks()
     interSatelliteLinkGeometry->setUseVertexBufferObjects(true);
 
     osg::StateSet *stateSet = interSatelliteLinkGeometry->getOrCreateStateSet();
-    stateSet->setAttributeAndModes(new osg::LineWidth(2.0f), osg::StateAttribute::ON);
+    stateSet->setAttributeAndModes(new osg::LineWidth(1.5f), osg::StateAttribute::ON);
     stateSet->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
     stateSet->setMode(GL_BLEND, osg::StateAttribute::ON);
     stateSet->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
