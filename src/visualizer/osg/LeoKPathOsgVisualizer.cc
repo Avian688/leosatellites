@@ -284,7 +284,7 @@ void LeoKPathOsgVisualizer::initializeConstellation()
 {
     satelliteOrbits.reserve(numSatellites);
     satellitePositions.resize(numSatellites);
-    satelliteVertices = new osg::Vec3dArray();
+    satelliteVertices = new osg::Vec3Array();
     satelliteVertices->resize(numSatellites);
 
     std::time_t epoch = 1619119189;
@@ -363,7 +363,7 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
     const double terminalAltitude = par("terminalMarkerAltitude").doubleValueInUnit("m");
 
     groundStationPositions.reserve(numGroundStations);
-    osg::ref_ptr<osg::Vec3dArray> groundVertices = new osg::Vec3dArray();
+    osg::ref_ptr<osg::Vec3Array> groundVertices = new osg::Vec3Array();
     for (int index = 0; index < numGroundStations; ++index) {
         omnetpp::cModule *node = getParentModule()->getSubmodule("groundStation", index);
         if (node == nullptr)
@@ -371,11 +371,11 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
         const osg::Vec3d position = geodeticToWorld(
             node->par("longitude"), node->par("latitude"), groundAltitude);
         groundStationPositions.push_back(position);
-        groundVertices->push_back(position);
+        groundVertices->push_back(static_cast<osg::Vec3>(position));
     }
 
     userTerminalPositions.reserve(numUserTerminals);
-    osg::ref_ptr<osg::Vec3dArray> terminalVertices = new osg::Vec3dArray();
+    osg::ref_ptr<osg::Vec3Array> terminalVertices = new osg::Vec3Array();
     for (int index = 0; index < numUserTerminals; ++index) {
         omnetpp::cModule *node = getParentModule()->getSubmodule("userTerminal", index);
         if (node == nullptr)
@@ -383,7 +383,7 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
         const osg::Vec3d position = geodeticToWorld(
             node->par("longitude"), node->par("latitude"), terminalAltitude);
         userTerminalPositions.push_back(position);
-        terminalVertices->push_back(position);
+        terminalVertices->push_back(static_cast<osg::Vec3>(position));
     }
 
     if (par("showGroundStations")) {
@@ -409,7 +409,7 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
 }
 
 osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createPointGeometry(
-    osg::Vec3dArray *vertices, const osg::Vec4& color, float pointSize, bool dynamic) const
+    osg::Vec3Array *vertices, const osg::Vec4& color, float pointSize, bool dynamic) const
 {
     osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
     geometry->setVertexArray(vertices);
@@ -499,7 +499,7 @@ void LeoKPathOsgVisualizer::updateVisualization()
         orbit->updateTime(snapshotTime);
         satellitePositions[index] = geodeticToWorld(
             orbit->getLongitude(), orbit->getLatitude(), orbit->getAltitude() * 1000.0);
-        (*satelliteVertices)[index] = satellitePositions[index];
+        (*satelliteVertices)[index] = static_cast<osg::Vec3>(satellitePositions[index]);
     }
     satelliteVertices->dirty();
     if (satelliteGeometry)
@@ -557,10 +557,10 @@ void LeoKPathOsgVisualizer::updateInterSatelliteLinks()
 osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createPathGeometry(
     const leoRouting::KShortestPath& path, int rank) const
 {
-    osg::ref_ptr<osg::Vec3dArray> vertices = new osg::Vec3dArray();
+    osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array();
     vertices->reserve(path.nodeIds.size());
     for (int32_t nodeId : path.nodeIds)
-        vertices->push_back(positionForNode(nodeId));
+        vertices->push_back(static_cast<osg::Vec3>(positionForNode(nodeId)));
 
     osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
     geometry->setVertexArray(vertices);
@@ -584,14 +584,14 @@ void LeoKPathOsgVisualizer::updateEndpointMarkers(int32_t sourceNodeId, int32_t 
 {
     selectedEndpointGeode->removeDrawables(0, selectedEndpointGeode->getNumDrawables());
 
-    osg::ref_ptr<osg::Vec3dArray> source = new osg::Vec3dArray();
-    source->push_back(positionForNode(sourceNodeId));
+    osg::ref_ptr<osg::Vec3Array> source = new osg::Vec3Array();
+    source->push_back(static_cast<osg::Vec3>(positionForNode(sourceNodeId)));
     selectedEndpointGeode->addDrawable(createPointGeometry(
         source, osg::Vec4(0.15f, 1.0f, 0.2f, 1.0f),
         static_cast<float>(par("selectedEndpointPointSize").doubleValue()), false));
 
-    osg::ref_ptr<osg::Vec3dArray> destination = new osg::Vec3dArray();
-    destination->push_back(positionForNode(destinationNodeId));
+    osg::ref_ptr<osg::Vec3Array> destination = new osg::Vec3Array();
+    destination->push_back(static_cast<osg::Vec3>(positionForNode(destinationNodeId)));
     selectedEndpointGeode->addDrawable(createPointGeometry(
         destination, osg::Vec4(1.0f, 0.15f, 0.15f, 1.0f),
         static_cast<float>(par("selectedEndpointPointSize").doubleValue()), false));

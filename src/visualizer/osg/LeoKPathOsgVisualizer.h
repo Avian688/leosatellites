@@ -62,7 +62,8 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
     osg::ref_ptr<osg::Geode> pathGeode;
     osg::ref_ptr<osg::Geode> selectedEndpointGeode;
     osg::ref_ptr<osg::Geometry> satelliteGeometry;
-    osg::ref_ptr<osg::Vec3dArray> satelliteVertices;
+    // OSG triangle visitors require float render arrays; world positions above stay double.
+    osg::ref_ptr<osg::Vec3Array> satelliteVertices;
     osg::ref_ptr<osg::Geometry> interSatelliteLinkGeometry;
     osg::ref_ptr<osg::Vec3Array> interSatelliteLinkVertices;
     osg::ref_ptr<osgText::Text> headerText;
@@ -79,7 +80,7 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
     void updateInterSatelliteLinks();
     int findSnapshotIndex(omnetpp::simtime_t time) const;
     osg::Vec3d positionForNode(int32_t nodeId) const;
-    osg::ref_ptr<osg::Geometry> createPointGeometry(osg::Vec3dArray *vertices,
+    osg::ref_ptr<osg::Geometry> createPointGeometry(osg::Vec3Array *vertices,
                                                     const osg::Vec4& color,
                                                     float pointSize,
                                                     bool dynamic) const;
