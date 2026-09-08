@@ -8,6 +8,7 @@ simple KShortestPathPingApp extends PingApp
         @class(inet::KShortestPathPingApp);
         int pathGroup; // Index in the configurator's sorted endpoint-pair list
         int pathIndex; // One-based rank in the selected K-path policy
+        bool monitorOnly = default(false); // Sample catalog state without injecting probe traffic; use count=-1
         @signal[kPathAvailable](type=long);
         @signal[kPathExpectedRtt](type=double; unit=s);
         @signal[kPathCoreLinkCount](type=long);

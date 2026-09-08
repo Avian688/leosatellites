@@ -26,6 +26,8 @@ void KShortestPathPingApp::initialize(int stage)
 
     pathGroup = par("pathGroup");
     pathIndex = par("pathIndex");
+    if (par("monitorOnly").boolValue() && par("count").intValue() != -1)
+        throw cRuntimeError("monitorOnly requires count=-1");
     if (pathGroup < 0 || pathGroup >= K_PATH_PING_MAX_GROUPS)
         throw cRuntimeError("pathGroup must be in the range 0..%d", K_PATH_PING_MAX_GROUPS - 1);
     if (pathIndex < 1 || pathIndex > K_PATH_PING_MAX_PATHS)
@@ -75,7 +77,8 @@ void KShortestPathPingApp::emitPathState()
 void KShortestPathPingApp::sendPingRequest()
 {
     emitPathState();
-    PingApp::sendPingRequest();
+    if (!par("monitorOnly").boolValue())
+        PingApp::sendPingRequest();
 }
 
 } // namespace inet

@@ -17,5 +17,12 @@ package leosatellites.networklayer.ipv4;
 import inet.networklayer.ipv4.Ipv4;
 simple LeoIpv4 extends Ipv4
 {
+    // Opt-in experiment mapping. The base connection uses rank 1; subflow
+    // port pair (clientPort+i, serverPort+i) uses rank i, in both directions.
+    // Requires configurator.kPathPingRouting and loaded K-path snapshots.
+    int kPathTcpPathGroup = default(-1); // -1 leaves ordinary TCP routing unchanged
+    int kPathTcpClientPort = default(4000);
+    int kPathTcpServerPort = default(1000);
+    int kPathTcpSubflows = default(1);
     @class(inet::LeoIpv4);
 }

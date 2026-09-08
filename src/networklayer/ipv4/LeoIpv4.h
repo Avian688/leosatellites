@@ -32,6 +32,12 @@ protected:
     virtual void initialize(int stage) override;
     virtual void routeUnicastPacket(Packet *packet) override;
     virtual void stop() override;
+    bool getKPathTcpSelection(const Packet *packet, const Ptr<const Ipv4Header>& header,
+                              int destinationNodeId, int& pathGroup, int& pathIndex) const;
+    int kPathTcpPathGroup = -1;
+    int kPathTcpClientPort = 4000;
+    int kPathTcpServerPort = 1000;
+    int kPathTcpSubflows = 1;
     int nodeId;
     std::unordered_map<uint32_t,uint32_t> nextHops;   //Destination Address (int format) -> Interface ID
     std::vector<int> primaryNextHopInterfaces;

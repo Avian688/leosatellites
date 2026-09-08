@@ -15,10 +15,12 @@
 #include "LeoIpv4.h"
 
 #include <algorithm>
+#include <cstdlib>
 
 #include <inet/common/ModuleAccess.h>
 #include <inet/networklayer/common/IpProtocolId_m.h>
 #include <inet/networklayer/ipv4/IcmpHeader.h>
+#include <inet/transportlayer/tcp_common/TcpHeader.h>
 #include "../../applications/pingapp/KShortestPathPingIdentifier.h"
 #include "../configurator/ipv4/LeoIpv4NetworkConfigurator.h"
 
@@ -63,8 +65,59 @@ LeoIpv4::~LeoIpv4()
 void LeoIpv4::initialize(int stage)
 {
     Ipv4::initialize(stage);
-    if (stage == INITSTAGE_LOCAL)
+    if (stage == INITSTAGE_LOCAL) {
         configurator = dynamic_cast<LeoIpv4NetworkConfigurator *>(getParentModule()->getParentModule()->getParentModule()->getSubmodule("configurator"));
+        kPathTcpPathGroup = par("kPathTcpPathGroup");
+        kPathTcpClientPort = par("kPathTcpClientPort");
+        kPathTcpServerPort = par("kPathTcpServerPort");
+        kPathTcpSubflows = par("kPathTcpSubflows");
+        if (kPathTcpPathGroup >= 0 && (kPathTcpSubflows < 1 ||
+                kPathTcpClientPort < 1 || kPathTcpServerPort < 1 ||
+                kPathTcpClientPort > 65535 - kPathTcpSubflows ||
+                kPathTcpServerPort > 65535 - kPathTcpSubflows ||
+                std::abs(kPathTcpClientPort - kPathTcpServerPort) <= kPathTcpSubflows))
+            throw cRuntimeError("Invalid or overlapping K-path TCP port ranges");
+    }
+    if (stage == INITSTAGE_LAST && kPathTcpPathGroup >= 0 &&
+            (configurator == nullptr || !configurator->isKPathPingRoutingEnabled()))
+        throw cRuntimeError("K-path TCP selection requires configurator.kPathPingRouting=true (loaded snapshots)");
+}
+
+bool LeoIpv4::getKPathTcpSelection(const Packet *packet, const Ptr<const Ipv4Header>& header,
+                                  int destinationNodeId, int& pathGroup, int& pathIndex) const
+{
+    if (kPathTcpPathGroup < 0 || header->getProtocolId() != IP_PROT_TCP)
+        return false;
+    const int peer = configurator->getKPathPingPeerNodeId(kPathTcpPathGroup, destinationNodeId);
+    const int source = header->getSrcAddress().isUnspecified() ? nodeId :
+        configurator->getModuleIdFromIpAddress(header->getSrcAddress().getInt());
+    // Detaching an access link temporarily removes its IP-to-node mapping.
+    // Keep recognizing the reserved TCP port pairs during that outage: the
+    // saved-route lookup will drop packets until the endpoint is reachable.
+    // Known addresses must still belong to the configured endpoint pair.
+    if ((destinationNodeId >= 0 && peer < 0) ||
+            (source >= 0 && configurator->getKPathPingPeerNodeId(kPathTcpPathGroup, source) < 0) ||
+            (source >= 0 && destinationNodeId >= 0 && source != peer))
+        return false;
+    // Selecting a TCP rank from a noninitial fragment is impossible. The
+    // experiment uses MSS 1200; fail explicitly if its MTU contract is broken.
+    if (header->getFragmentOffset() != 0 || header->getMoreFragments())
+        throw cRuntimeError("K-path TCP routing requires unfragmented packets; reduce TCP MSS");
+    const auto& tcpHeader = packet->peekDataAt<tcp::TcpHeader>(B(header->getHeaderLength()));
+    const int forwardRank = tcpHeader->getSrcPort() - kPathTcpClientPort;
+    const int reverseRank = tcpHeader->getDestPort() - kPathTcpClientPort;
+    int rank = -1;
+    if (forwardRank >= 0 && forwardRank <= kPathTcpSubflows &&
+            tcpHeader->getDestPort() == kPathTcpServerPort + forwardRank)
+        rank = forwardRank;
+    else if (reverseRank >= 0 && reverseRank <= kPathTcpSubflows &&
+            tcpHeader->getSrcPort() == kPathTcpServerPort + reverseRank)
+        rank = reverseRank;
+    if (rank < 0)
+        throw cRuntimeError("TCP ports for the selected K-path endpoint pair do not match its configured port mapping");
+    pathGroup = kPathTcpPathGroup;
+    pathIndex = std::max(1, rank);
+    return true;
 }
 
 void LeoIpv4::setNodeId(int id)
@@ -151,8 +204,9 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
     const int destinationNodeType = configurator->getNodeTypeCode(modId);
     int pathGroup = -1;
     int pathIndex = -1;
-    const bool useKPath = configurator->isKPathPingRoutingEnabled() &&
-        getKPathPingSelection(packet, ipv4Header, pathGroup, pathIndex);
+    const bool useKPath = getKPathTcpSelection(packet, ipv4Header, modId, pathGroup, pathIndex) ||
+        (configurator->isKPathPingRoutingEnabled() &&
+         getKPathPingSelection(packet, ipv4Header, pathGroup, pathIndex));
     int interfaceID = useKPath ?
         configurator->getKPathPingNextHopInterface(nodeId, modId, pathGroup, pathIndex) :
         ((modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[modId] : 0);
@@ -191,7 +245,7 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
 
     if (!hopFound) {    // no route found
         if (useKPath)
-            EV_DETAIL << "selected K path is unavailable, dropping ping\n";
+            EV_DETAIL << "selected K path is unavailable, dropping packet\n";
         else {
             EV_WARN << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";
             std::cout << "unroutable, sending ICMP_DESTINATION_UNREACHABLE, dropping packet\n";
