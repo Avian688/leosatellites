@@ -83,7 +83,8 @@ class LeoKPathOsgVisualizer : public omnetpp::cSimpleModule
     osg::ref_ptr<osg::Geometry> createPointGeometry(osg::Vec3Array *vertices,
                                                     const osg::Vec4& color,
                                                     float pointSize,
-                                                    bool dynamic) const;
+                                                    bool dynamic,
+                                                    bool square = false) const;
     osg::ref_ptr<osg::Geometry> createPathGeometry(const leoRouting::KShortestPath& path,
                                                    int rank) const;
     void updateEndpointMarkers(int32_t sourceNodeId, int32_t destinationNodeId);

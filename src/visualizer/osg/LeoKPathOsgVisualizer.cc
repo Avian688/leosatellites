@@ -389,7 +389,7 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
     if (par("showGroundStations")) {
         osg::ref_ptr<osg::Geode> geode = new osg::Geode();
         geode->addDrawable(createPointGeometry(
-            groundVertices, osg::Vec4(0.1f, 0.85f, 1.0f, 0.95f),
+            groundVertices, osg::Vec4(1.0f, 0.5f, 0.0f, 1.0f),
             static_cast<float>(par("groundStationPointSize").doubleValue()), false));
         scene->addChild(geode);
     }
@@ -397,8 +397,8 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
     if (par("showUserTerminals")) {
         osg::ref_ptr<osg::Geode> geode = new osg::Geode();
         geode->addDrawable(createPointGeometry(
-            terminalVertices, osg::Vec4(1.0f, 0.72f, 0.1f, 1.0f),
-            static_cast<float>(par("userTerminalPointSize").doubleValue()), false));
+            terminalVertices, osg::Vec4(1.0f, 0.15f, 0.15f, 1.0f),
+            static_cast<float>(par("userTerminalPointSize").doubleValue()), false, true));
         scene->addChild(geode);
     }
 
@@ -409,7 +409,7 @@ void LeoKPathOsgVisualizer::initializeStaticNodes()
 }
 
 osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createPointGeometry(
-    osg::Vec3Array *vertices, const osg::Vec4& color, float pointSize, bool dynamic) const
+    osg::Vec3Array *vertices, const osg::Vec4& color, float pointSize, bool dynamic, bool square) const
 {
     osg::ref_ptr<osg::Geometry> geometry = new osg::Geometry();
     geometry->setVertexArray(vertices);
@@ -424,6 +424,9 @@ osg::ref_ptr<osg::Geometry> LeoKPathOsgVisualizer::createPointGeometry(
 
     osg::StateSet *stateSet = geometry->getOrCreateStateSet();
     stateSet->setAttributeAndModes(new osg::Point(pointSize), osg::StateAttribute::ON);
+    // Unsmooth points are screen-facing squares; smooth points are round blips.
+    stateSet->setMode(GL_POINT_SMOOTH,
+        (square ? osg::StateAttribute::OFF : osg::StateAttribute::ON) | osg::StateAttribute::OVERRIDE);
     stateSet->setMode(GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::OVERRIDE);
     stateSet->setMode(GL_BLEND, osg::StateAttribute::ON);
     return geometry;
@@ -587,14 +590,14 @@ void LeoKPathOsgVisualizer::updateEndpointMarkers(int32_t sourceNodeId, int32_t 
     osg::ref_ptr<osg::Vec3Array> source = new osg::Vec3Array();
     source->push_back(static_cast<osg::Vec3>(positionForNode(sourceNodeId)));
     selectedEndpointGeode->addDrawable(createPointGeometry(
-        source, osg::Vec4(0.15f, 1.0f, 0.2f, 1.0f),
-        static_cast<float>(par("selectedEndpointPointSize").doubleValue()), false));
+        source, osg::Vec4(1.0f, 0.15f, 0.15f, 1.0f),
+        static_cast<float>(par("selectedEndpointPointSize").doubleValue()), false, true));
 
     osg::ref_ptr<osg::Vec3Array> destination = new osg::Vec3Array();
     destination->push_back(static_cast<osg::Vec3>(positionForNode(destinationNodeId)));
     selectedEndpointGeode->addDrawable(createPointGeometry(
         destination, osg::Vec4(1.0f, 0.15f, 0.15f, 1.0f),
-        static_cast<float>(par("selectedEndpointPointSize").doubleValue()), false));
+        static_cast<float>(par("selectedEndpointPointSize").doubleValue()), false, true));
 }
 
 void LeoKPathOsgVisualizer::updateLegend(

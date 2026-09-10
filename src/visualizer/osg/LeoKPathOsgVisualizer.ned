@@ -31,9 +31,9 @@ simple LeoKPathOsgVisualizer
         bool showGroundStations = default(true);
         bool showUserTerminals = default(true);
         double satellitePointSize = default(10); // screen pixels
-        double groundStationPointSize = default(15);
-        double userTerminalPointSize = default(15);
-        double selectedEndpointPointSize = default(20);
+        double groundStationPointSize = default(18);
+        double userTerminalPointSize = default(22);
+        double selectedEndpointPointSize = default(26);
         double groundMarkerAltitude @unit(m) = default(15000m);
         double terminalMarkerAltitude @unit(m) = default(30000m);
         @display("i=misc/globe");
