@@ -112,6 +112,7 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         kPathMaxSharedLinks = par("kPathMaxSharedLinks");
         kPathMaxRttSpreadMs = par("kPathMaxRttSpread").doubleValueInUnit("ms");
         kPathSnapshotSet = par("kPathSnapshotSet").stringValue();
+        kPathCoreSnapshotProfile = trimWhitespace(par("kPathCoreSnapshotProfile").stringValue());
         kPathEndpointPairsSpec = par("kPathEndpointPairs").stringValue();
         kPathPingRouting = par("kPathPingRouting");
         if (numOfKPaths < 1)
@@ -172,7 +173,8 @@ std::filesystem::path LeoIpv4NetworkConfigurator::getRoutingDirectory() const
 
 std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotDirectory() const
 {
-    const std::string profile = leoRouting::makeKPathSnapshotProfileName(
+    const std::string profile = !kPathCoreSnapshotProfile.empty() ? kPathCoreSnapshotProfile :
+        leoRouting::makeKPathSnapshotProfileName(
         leoRouting::kPathAlgorithmForPolicy(kPathsEdgeDisjoint, kPathMaxSharedLinks), numOfKPaths,
         kPathMaxRttSpreadMs, kPathMaxSharedLinks, configuredKPathEndpointPairs);
     return getRoutingDirectory() / "kpaths" / kPathSnapshotSet / profile;
@@ -196,6 +198,12 @@ void LeoIpv4NetworkConfigurator::initializeKPathSnapshotConfiguration()
         throw cRuntimeError("Unknown kPathSnapshotMode '%s'; expected disabled, generate, or load",
                             mode.c_str());
 
+    if (!kPathCoreSnapshotProfile.empty() && (kPathSnapshotMode != KPathSnapshotMode::Load ||
+        kPathCoreSnapshotProfile == "." || kPathCoreSnapshotProfile == ".." ||
+        !std::all_of(kPathCoreSnapshotProfile.begin(), kPathCoreSnapshotProfile.end(), [](unsigned char c) {
+            return std::isalnum(c) || c == '_' || c == '-' || c == '.';
+        })))
+        throw cRuntimeError("kPathCoreSnapshotProfile requires load mode and one safe profile directory name");
     if (kPathSnapshotMode == KPathSnapshotMode::Disabled)
         return;
     if (numOfKPaths <= 1)
@@ -1079,7 +1087,10 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
     }
     if (endpointToNodeMap != previousEndpointToNodeMap) {
         endpointAttachmentGeneration++;
-        currentKPathGroups.clear();
+        if (kPathCoreSnapshotProfile.empty())
+            currentKPathGroups.clear();
+        else
+            extendSavedCoreKPathGroups();
     }
 }
 
@@ -1215,6 +1226,30 @@ void LeoIpv4NetworkConfigurator::generateKPathSnapshot(
     nextKPathSnapshotSequence++;
 }
 
+void LeoIpv4NetworkConfigurator::extendSavedCoreKPathGroups()
+{
+    currentKPathGroups.clear();
+    for (const auto& [source, destination] : configuredKPathEndpointPairs) {
+        const auto src = endpointToNodeMap.find(source);
+        const auto dst = endpointToNodeMap.find(destination);
+        if (src == endpointToNodeMap.end() || dst == endpointToNodeMap.end())
+            continue;
+        const auto saved = std::find_if(savedCoreKPathGroups.begin(), savedCoreKPathGroups.end(),
+            [&](const leoRouting::KShortestPathGroup& group) {
+                return (group.coreSourceNodeId == src->second && group.coreDestinationNodeId == dst->second) ||
+                       (group.coreSourceNodeId == dst->second && group.coreDestinationNodeId == src->second);
+            });
+        if (saved == savedCoreKPathGroups.end())
+            continue; // This attachment pair has no saved core ranks; do not invent paths.
+        auto group = leoRouting::extendSavedCoreKPathGroup(*saved, source, destination,
+            src->second, dst->second, getEndpointAccessOneWayDelayMs(source) +
+            getEndpointAccessOneWayDelayMs(destination), numOfKPaths);
+        group.topologyGeneration = pathTopologyGeneration;
+        group.endpointAttachmentGeneration = endpointAttachmentGeneration;
+        currentKPathGroups.emplace(leoRouting::kPathEndpointPairKey(source, destination), std::move(group));
+    }
+}
+
 void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
     simtime_t interval, const leoRouting::StableRouteState& routeState)
 {
@@ -1236,7 +1271,7 @@ void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
         throw cRuntimeError("Endpoint K-path snapshot %s has sequence %d; expected %d",
                             path.string().c_str(), snapshot.header.sequence, expectedSequence);
     if (snapshot.header.routableNodeCount != routableNodeCount ||
-        snapshot.header.totalNodeCount != static_cast<int32_t>(nodeModules.size()))
+        (kPathCoreSnapshotProfile.empty() && snapshot.header.totalNodeCount != static_cast<int32_t>(nodeModules.size())))
         throw cRuntimeError("Endpoint K-path snapshot %s does not match the current node dimensions",
                             path.string().c_str());
     if (snapshot.header.maxPathCount != numOfKPaths ||
@@ -1249,6 +1284,24 @@ void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
     if (snapshot.header.routeStateHash != routeState.stateHash())
         throw cRuntimeError("Endpoint K-path snapshot %s was generated for a different primary route state",
                             path.string().c_str());
+    if (!kPathCoreSnapshotProfile.empty()) {
+        // The codec has validated the old endpoint wrappers. Keep all core/path
+        // policy, sequence, checksum and primary-state checks above; only the
+        // old terminal dimensions/attachments are replaced by live access links.
+        savedCoreKPathGroups = std::move(snapshot.groups);
+        pathTopologyGeneration++;
+        extendSavedCoreKPathGroups();
+        kPathSnapshotFilesRead++;
+        kPathSnapshotBytesRead += snapshot.bytesRead;
+        for (const auto& group : savedCoreKPathGroups) {
+            kPathGroupsLoaded++;
+            kPathsLoaded += group.paths.size();
+            for (const auto& savedPath : group.paths)
+                kPathNodeIdsLoaded += savedPath.nodeIds.size();
+        }
+        nextKPathSnapshotSequence++;
+        return;
+    }
     const uint64_t endpointStateHash = leoRouting::computeKPathEndpointStateHash(
         getConfiguredKPathEndpointStates());
     if (snapshot.header.endpointStateHash != endpointStateHash)

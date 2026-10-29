@@ -64,6 +64,13 @@ KShortestPathGroup orientKShortestPathGroup(const KShortestPathGroup& canonicalG
                                             int32_t destinationEndpoint,
                                             int32_t requestedPathCount);
 
+// Reuse the saved core sequence with current terminal IDs and access delays.
+// The attached core pair must match the saved pair, in either direction.
+KShortestPathGroup extendSavedCoreKPathGroup(const KShortestPathGroup& savedGroup,
+    int32_t sourceEndpoint, int32_t destinationEndpoint,
+    int32_t sourceCore, int32_t destinationCore,
+    double accessOneWayDelayMs, int32_t requestedPathCount);
+
 KPathSnapshot readKPathSnapshot(const std::filesystem::path& path);
 void writeKPathSnapshotAtomic(const std::filesystem::path& path,
                               KPathSnapshotHeader header,

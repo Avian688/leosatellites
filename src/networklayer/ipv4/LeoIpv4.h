@@ -35,6 +35,7 @@ protected:
     bool getKPathTcpSelection(const Packet *packet, const Ptr<const Ipv4Header>& header,
                               int destinationNodeId, int& pathGroup, int& pathIndex) const;
     int kPathTcpPathGroup = -1;
+    std::vector<int> kPathTcpPathGroups;
     int kPathTcpClientPort = 4000;
     int kPathTcpServerPort = 1000;
     int kPathTcpSubflows = 1;

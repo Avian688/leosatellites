@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <sstream>
 
 #include <inet/common/ModuleAccess.h>
 #include <inet/networklayer/common/IpProtocolId_m.h>
@@ -68,35 +69,64 @@ void LeoIpv4::initialize(int stage)
     if (stage == INITSTAGE_LOCAL) {
         configurator = dynamic_cast<LeoIpv4NetworkConfigurator *>(getParentModule()->getParentModule()->getParentModule()->getSubmodule("configurator"));
         kPathTcpPathGroup = par("kPathTcpPathGroup");
+        std::istringstream groups(par("kPathTcpPathGroups").stdstringValue());
+        int group;
+        while (groups >> group) {
+            if (group < 0)
+                throw cRuntimeError("kPathTcpPathGroups requires nonnegative group indices");
+            kPathTcpPathGroups.push_back(group);
+        }
+        if (!groups.eof())
+            throw cRuntimeError("kPathTcpPathGroups requires whitespace-separated group indices");
         kPathTcpClientPort = par("kPathTcpClientPort");
         kPathTcpServerPort = par("kPathTcpServerPort");
         kPathTcpSubflows = par("kPathTcpSubflows");
-        if (kPathTcpPathGroup >= 0 && (kPathTcpSubflows < 1 ||
+        if ((kPathTcpPathGroup >= 0 || !kPathTcpPathGroups.empty()) && (kPathTcpSubflows < 1 ||
                 kPathTcpClientPort < 1 || kPathTcpServerPort < 1 ||
                 kPathTcpClientPort > 65535 - kPathTcpSubflows ||
                 kPathTcpServerPort > 65535 - kPathTcpSubflows ||
                 std::abs(kPathTcpClientPort - kPathTcpServerPort) <= kPathTcpSubflows))
             throw cRuntimeError("Invalid or overlapping K-path TCP port ranges");
     }
-    if (stage == INITSTAGE_LAST && kPathTcpPathGroup >= 0 &&
+    if (stage == INITSTAGE_LAST && (kPathTcpPathGroup >= 0 || !kPathTcpPathGroups.empty()) &&
             (configurator == nullptr || !configurator->isKPathPingRoutingEnabled()))
         throw cRuntimeError("K-path TCP selection requires configurator.kPathPingRouting=true (loaded snapshots)");
+    if (stage == INITSTAGE_LAST)
+        for (int group : kPathTcpPathGroups)
+            if (group >= configurator->getKPathPingGroupCount())
+                throw cRuntimeError("kPathTcpPathGroups contains unknown endpoint group %d", group);
 }
 
 bool LeoIpv4::getKPathTcpSelection(const Packet *packet, const Ptr<const Ipv4Header>& header,
                                   int destinationNodeId, int& pathGroup, int& pathIndex) const
 {
-    if (kPathTcpPathGroup < 0 || header->getProtocolId() != IP_PROT_TCP)
+    if ((kPathTcpPathGroup < 0 && kPathTcpPathGroups.empty()) || header->getProtocolId() != IP_PROT_TCP)
         return false;
-    const int peer = configurator->getKPathPingPeerNodeId(kPathTcpPathGroup, destinationNodeId);
     const int source = header->getSrcAddress().isUnspecified() ? nodeId :
         configurator->getModuleIdFromIpAddress(header->getSrcAddress().getInt());
+    int selectedGroup = kPathTcpPathGroup;
+    if (!kPathTcpPathGroups.empty()) {
+        selectedGroup = -1;
+        for (int candidate : kPathTcpPathGroups) {
+            const int candidatePeer = configurator->getKPathPingPeerNodeId(candidate, destinationNodeId);
+            const int sourcePeer = configurator->getKPathPingPeerNodeId(candidate, source);
+            if ((destinationNodeId >= 0 ? candidatePeer >= 0 : sourcePeer >= 0) &&
+                    (source < 0 || sourcePeer >= 0) &&
+                    (source < 0 || destinationNodeId < 0 || source == candidatePeer)) {
+                selectedGroup = candidate;
+                break;
+            }
+        }
+        if (selectedGroup < 0)
+            return false; // Other terminal pairs retain ordinary shortest-path routing.
+    }
+    const int peer = configurator->getKPathPingPeerNodeId(selectedGroup, destinationNodeId);
     // Detaching an access link temporarily removes its IP-to-node mapping.
     // Keep recognizing the reserved TCP port pairs during that outage: the
     // saved-route lookup will drop packets until the endpoint is reachable.
     // Known addresses must still belong to the configured endpoint pair.
     if ((destinationNodeId >= 0 && peer < 0) ||
-            (source >= 0 && configurator->getKPathPingPeerNodeId(kPathTcpPathGroup, source) < 0) ||
+            (source >= 0 && configurator->getKPathPingPeerNodeId(selectedGroup, source) < 0) ||
             (source >= 0 && destinationNodeId >= 0 && source != peer))
         return false;
     // Selecting a TCP rank from a noninitial fragment is impossible. The
@@ -115,7 +145,7 @@ bool LeoIpv4::getKPathTcpSelection(const Packet *packet, const Ptr<const Ipv4Hea
         rank = reverseRank;
     if (rank < 0)
         throw cRuntimeError("TCP ports for the selected K-path endpoint pair do not match its configured port mapping");
-    pathGroup = kPathTcpPathGroup;
+    pathGroup = selectedGroup;
     pathIndex = std::max(1, rank);
     return true;
 }

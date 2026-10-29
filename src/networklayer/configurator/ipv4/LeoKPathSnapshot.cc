@@ -438,6 +438,47 @@ KShortestPathGroup orientKShortestPathGroup(const KShortestPathGroup& canonicalG
     return result;
 }
 
+KShortestPathGroup extendSavedCoreKPathGroup(const KShortestPathGroup& savedGroup,
+    int32_t sourceEndpoint, int32_t destinationEndpoint,
+    int32_t sourceCore, int32_t destinationCore,
+    double accessOneWayDelayMs, int32_t requestedPathCount)
+{
+    if (sourceEndpoint < 0 || destinationEndpoint < 0 || sourceEndpoint == destinationEndpoint ||
+        sourceCore < 0 || destinationCore < 0 ||
+        !std::isfinite(accessOneWayDelayMs) || accessOneWayDelayMs < 0 ||
+        requestedPathCount < 1 || requestedPathCount > savedGroup.requestedPathCount)
+        throw std::invalid_argument("Invalid current endpoints, access delay, or requested K-path count");
+    const bool forward = sourceCore == savedGroup.coreSourceNodeId &&
+                         destinationCore == savedGroup.coreDestinationNodeId;
+    const bool reverse = sourceCore == savedGroup.coreDestinationNodeId &&
+                         destinationCore == savedGroup.coreSourceNodeId;
+    if (!forward && !reverse)
+        throw std::invalid_argument("Current terminal attachments do not match the saved core pair");
+
+    KShortestPathGroup result = savedGroup;
+    result.sourceNodeId = sourceEndpoint;
+    result.destinationNodeId = destinationEndpoint;
+    result.coreSourceNodeId = sourceCore;
+    result.coreDestinationNodeId = destinationCore;
+    result.requestedPathCount = requestedPathCount;
+    if (result.paths.size() > static_cast<size_t>(requestedPathCount))
+        result.paths.resize(requestedPathCount);
+    for (auto& path : result.paths) {
+        if (path.nodeIds.size() < 3 || path.nodeIds.front() != savedGroup.sourceNodeId ||
+            path.nodeIds.back() != savedGroup.destinationNodeId ||
+            path.nodeIds[1] != savedGroup.coreSourceNodeId ||
+            path.nodeIds[path.nodeIds.size() - 2] != savedGroup.coreDestinationNodeId)
+            throw std::invalid_argument("Saved core K-path sequence does not match its group");
+        if (!forward)
+            std::reverse(path.nodeIds.begin(), path.nodeIds.end());
+        path.nodeIds.front() = sourceEndpoint;
+        path.nodeIds.back() = destinationEndpoint;
+        path.oneWayDelayMs = path.coreOneWayDelayMs + accessOneWayDelayMs;
+        path.rttMs = 2 * path.oneWayDelayMs;
+    }
+    return result;
+}
+
 KPathSnapshot readKPathSnapshot(const std::filesystem::path& path)
 {
     KPathSnapshot snapshot;

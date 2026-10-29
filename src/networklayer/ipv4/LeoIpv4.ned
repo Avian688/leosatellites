@@ -21,6 +21,9 @@ simple LeoIpv4 extends Ipv4
     // port pair (clientPort+i, serverPort+i) uses rank i, in both directions.
     // Requires configurator.kPathPingRouting and loaded K-path snapshots.
     int kPathTcpPathGroup = default(-1); // -1 leaves ordinary TCP routing unchanged
+    // Optional list for simultaneous connections on distinct terminal pairs.
+    // Endpoint addresses select the group; an empty list keeps the setting above.
+    string kPathTcpPathGroups = default("");
     int kPathTcpClientPort = default(4000);
     int kPathTcpServerPort = default(1000);
     int kPathTcpSubflows = default(1);

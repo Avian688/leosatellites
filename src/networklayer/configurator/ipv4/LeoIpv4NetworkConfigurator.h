@@ -109,6 +109,8 @@ protected:
     double kPathMaxRttSpreadMs = 5;
     KPathSnapshotMode kPathSnapshotMode = KPathSnapshotMode::Disabled;
     std::string kPathSnapshotSet;
+    std::string kPathCoreSnapshotProfile;
+    std::vector<leoRouting::KShortestPathGroup> savedCoreKPathGroups;
     std::string kPathEndpointPairsSpec;
     bool kPathPingRouting = false;
     std::vector<std::pair<int32_t, int32_t>> configuredKPathEndpointPairs;
@@ -131,6 +133,7 @@ protected:
         int32_t sourceEndpoint, int32_t destinationEndpoint) const;
     void generateKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
     void loadKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
+    void extendSavedCoreKPathGroups();
     void applyFullRouteState(leoRouting::StableRouteState&& candidateState);
     void applyDeltaRouteState(const leoRouting::ParsedSnapshot& snapshot);
     void writeGeneratedRouteSnapshot(const leoRouting::StableRouteState& currentState,
@@ -194,6 +197,7 @@ public:
         int pathGroup, int sourceNodeId, int destinationNodeId, int requestedPathCount,
         leoRouting::KShortestPathGroup& result) const;
     virtual int getKPathPingPeerNodeId(int pathGroup, int endpointNodeId) const;
+    int getKPathPingGroupCount() const { return static_cast<int>(configuredKPathEndpointPairs.size()); }
     virtual int getKPathPingNextHopInterface(
         int currentNodeId, int destinationNodeId, int pathGroup, int pathIndex);
     bool isKPathPingRoutingEnabled() const { return kPathPingRouting; }

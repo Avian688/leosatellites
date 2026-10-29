@@ -339,6 +339,67 @@ void testDisconnectedSnapshotGroup()
     std::filesystem::remove_all(directory);
 }
 
+void testReuseSavedCorePathsForDifferentTerminals()
+{
+    testsRun++;
+    const auto directory = temporaryDirectory();
+    std::filesystem::remove_all(directory);
+    const auto path = directory / "0.1.bin";
+    writeKPathSnapshotAtomic(path, makeSnapshotHeader(true), {makeSnapshotGroup(true)}, false);
+    const auto snapshot = readKPathSnapshot(path);
+    const auto& saved = snapshot.groups.front();
+
+    // New terminal IDs deliberately exceed the old file's totalNodeCount.
+    const auto first = extendSavedCoreKPathGroup(saved, 100, 101, 0, 5, 6.0, 3);
+    const auto second = extendSavedCoreKPathGroup(saved, 200, 201, 0, 5, 9.0, 1);
+    const auto reverse = extendSavedCoreKPathGroup(saved, 300, 301, 5, 0, 4.0, 2);
+    require(first.paths.size() == 2 && first.requestedPathCount == 3,
+            "core reuse duplicated missing ranks");
+    require(first.paths[0].nodeIds == std::vector<int32_t>({100, 0, 1, 5, 101}) &&
+            first.paths[1].nodeIds == std::vector<int32_t>({100, 0, 2, 5, 101}),
+            "core reuse changed saved ranks or retained old terminal IDs");
+    require(second.paths.size() == 1 && second.paths[0].nodeIds.front() == 200,
+            "co-located terminal pair did not get its own path wrapper");
+    require(reverse.paths[0].nodeIds == std::vector<int32_t>({300, 5, 1, 0, 301}) &&
+            reverse.coreSourceNodeId == 5 && reverse.coreDestinationNodeId == 0,
+            "core reuse did not reverse the saved route");
+    requireNear(first.paths[0].rttMs, 16.0, "core reuse retained the saved access delay");
+    requireNear(second.paths[0].rttMs, 22.0, "independent terminal access delay was lost");
+    requireNear(reverse.paths[0].rttMs, 12.0, "reverse access delay is incorrect");
+    require(first.edgeDisjoint && first.maxRttSpreadMs == saved.maxRttSpreadMs,
+            "core reuse changed the saved policy");
+    require(saved.paths[0].nodeIds == std::vector<int32_t>({6, 0, 1, 5, 7}),
+            "core reuse mutated the cached saved path");
+    require(readKPathSnapshot(path).header.totalNodeCount == 8,
+            "core reuse modified the original snapshot");
+    expectFailure("core reuse accepted a different attachment pair", [&] {
+        extendSavedCoreKPathGroup(saved, 100, 101, 1, 5, 2.0, 3);
+    });
+    expectFailure("core reuse accepted a disconnected terminal", [&] {
+        extendSavedCoreKPathGroup(saved, 100, 101, -1, 5, 2.0, 3);
+    });
+    expectFailure("core reuse accepted more ranks than the saved profile", [&] {
+        extendSavedCoreKPathGroup(saved, 100, 101, 0, 5, 2.0, 4);
+    });
+    std::filesystem::remove_all(directory);
+}
+
+void testReuseEmptyAndSameCoreGroups()
+{
+    testsRun++;
+    auto group = makeSnapshotGroup();
+    group.paths.clear();
+    require(extendSavedCoreKPathGroup(group, 100, 101, 0, 5, 1.0, 3).paths.empty(),
+            "core reuse invented a path for an empty saved group");
+    group.coreSourceNodeId = group.coreDestinationNodeId = 2;
+    group.paths = {{{6, 2, 7}, 0.0, 2.0, 4.0}};
+    const auto extended = extendSavedCoreKPathGroup(group, 100, 101, 2, 2, 7.0, 3);
+    require(extended.paths.size() == 1 &&
+            extended.paths[0].nodeIds == std::vector<int32_t>({100, 2, 101}),
+            "core reuse mishandled terminals on the same core node");
+    requireNear(extended.paths[0].rttMs, 14.0, "same-core access RTT is incorrect");
+}
+
 void testSnapshotValidationFailures()
 {
     testsRun++;
@@ -455,6 +516,8 @@ int main()
         testDisconnectedTopology();
         testSnapshotRoundTripAndOrientation();
         testDisconnectedSnapshotGroup();
+        testReuseSavedCorePathsForDifferentTerminals();
+        testReuseEmptyAndSameCoreGroups();
         testSnapshotValidationFailures();
         testEndpointStateHash();
         testSnapshotProfileSeparation();

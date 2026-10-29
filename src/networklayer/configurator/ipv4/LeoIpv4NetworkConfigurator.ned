@@ -28,6 +28,7 @@ simple LeoIpv4NetworkConfigurator extends L3NetworkConfiguratorBase
         double kPathMaxRttSpread @unit(ms) = default(5ms); // Keep paths no more than this much slower than the shortest RTT
         string kPathSnapshotMode = default("disabled"); // disabled, generate, or load
         string kPathSnapshotSet = default(""); // Named endpoint geometry/path set under the routing corpus kpaths directory
+        string kPathCoreSnapshotProfile = default(""); // Load-only: reuse this existing profile's core paths with current terminals; empty preserves exact endpoint matching
         string kPathEndpointPairs = default("all"); // all end-host pairs, or comma-separated endpointA->endpointB module names
         bool kPathPingRouting = default(false); // Route marked KShortestPathPingApp packets over their selected saved path
         bool loadFiles = default (true);
