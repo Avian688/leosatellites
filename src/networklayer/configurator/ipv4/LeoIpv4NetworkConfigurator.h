@@ -43,6 +43,7 @@ namespace inet {
 class INET_API LeoIpv4NetworkConfigurator : public L3NetworkConfiguratorBase {
   private:
     enum class KPathSnapshotMode {
+        Compute,
         Disabled,
         Generate,
         Load,
@@ -131,6 +132,7 @@ protected:
     std::vector<leoRouting::KPathEndpointState> getConfiguredKPathEndpointStates() const;
     leoRouting::KShortestPathGroup computeCanonicalKShortestPathGroup(
         int32_t sourceEndpoint, int32_t destinationEndpoint) const;
+    void computeCurrentKPaths();
     void generateKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
     void loadKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
     void extendSavedCoreKPathGroups();

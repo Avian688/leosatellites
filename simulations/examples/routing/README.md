@@ -6,15 +6,14 @@ experiment. They need INET, OS3, and leosatellites. Run the commands below from 
 The common scenario has 1,584 satellites, 72 planes, 22 satellites per plane,
 550 km altitude, 53-degree inclination, and 100 ms mobility updates. It uses
 a shared ordered ground-station list (five city stations plus the supplied
-gateways) and ten terminals, in these five pairs:
+gateways). There is exactly one user terminal at each ground-station location,
+with matching array indices. The supplied list gives **100 terminals and 4,950
+unordered terminal pairs**. Every pair is included in each K-path policy catalog;
+reverse-direction queries reuse the same saved group.
 
-| Pair | Source terminal | Destination terminal |
-| --- | --- | --- |
-| San Diego–Seattle | 0 | 1 |
-| Seattle–New York | 2 | 3 |
-| San Diego–New York | 4 | 5 |
-| New York–London | 6 | 7 |
-| San Diego–Shanghai | 8 | 9 |
+K-path endpoints are user terminals only. Ground stations remain possible core
+relays. The first and last terminal-to-satellite access links may be shared across
+all ranks, including edge-disjoint ranks; disjointness applies to core links.
 
 Both save modes and the viewer are generated from the same definitions in
 `../../pythonScripts/routingExamples/generateRoutingExamples.py` and
@@ -39,6 +38,8 @@ python3 ../../pythonScripts/routingExamples/viewRoutes.py --policy ShortestPath 
 The viewer reads K-path catalogs, so `--with-viewer` additionally generates the
 Unrestricted ten-path catalog; ShortestPath displays only its first rank.
 Primary routing files alone are sufficient for normal single-path experiments.
+The primary saver still records core forwarding routes, including ground stations;
+only the K-path catalogs are restricted to user-terminal endpoint pairs.
 
 ## Example 2: multiple paths
 
@@ -47,7 +48,7 @@ python3 ../../pythonScripts/routingExamples/saveRoutes.py --mode multiple --core
 python3 ../../pythonScripts/routingExamples/viewRoutes.py --policy EdgeDisjoint --pair SanDiegoToShanghai
 ```
 
-Primary routes are generated first, then the seven catalogs in parallel:
+Primary core routes are generated first, then the seven terminal-pair catalogs in parallel:
 Unrestricted, Shared1–Shared5, and EdgeDisjoint. Each catalog requests ten paths
 with a maximum RTT spread of 1,000 ms; fewer may be available. To reuse existing
 primary routes and generate selected catalogs only:
@@ -94,7 +95,7 @@ Use an experiment-owned result directory. Add leosatellites to the consuming
 project's references and include its `src` and `simulations` NED roots at launch.
 
 For multipath consumers set `kPathSnapshotMode = "load"`,
-`kPathSnapshotSet = "SharedLeoRoutes"`, `numOfKPaths = 10`, and
+`kPathSnapshotSet = "SharedLeoAllStationPairs"`, `numOfKPaths = 10`, and
 `kPathMaxRttSpread = 1000ms`, with the desired `kPathsEdgeDisjoint` /
 `kPathMaxSharedLinks` policy. Keep the endpoint-pair specification from the
 shared include. Transport route selection still needs its normal configuration
@@ -102,13 +103,19 @@ shared include. Transport route selection still needs its normal configuration
 that automatically. A K=2 transport can use the first two ranks of the K=10
 catalog without changing the catalog's `numOfKPaths`.
 
-**Compatibility requires the same graph:** constellation geometry, node counts,
-node ordering, station/terminal coordinates, ISL mode, mobility timing, and
-handover settings. Preserve the `satellite`, `groundStation`, and `userTerminal`
-module arrays. Experiments with different terminal counts must adopt the
-shared layout before reusing these files, or generate a separate corpus.
-Catalogs from different geometries or profiles must not be mixed by renaming
-files into the `SharedLeoRoutes` snapshot set.
+For later experiments with additional terminals, use `kPathSnapshotMode = "load"`
+and set `kPathCoreSnapshotProfile` to the existing policy-profile directory name
+under `kpaths/SharedLeoAllStationPairs/`. Configure the consumer's traffic pairs.
+This reuses saved core ranks and appends the current first and last access links,
+without recomputing K paths. The satellite/ground-station core, its geometry,
+node ordering and mobility timing must match the primary saves.
+
+Each consumer's serving-satellite pair must be covered by the saved catalog at
+that time. This setup covers all station-location terminal pairs; it does not
+promise every possible satellite pair for arbitrary other geographic locations.
+Without `kPathCoreSnapshotProfile`, exact saved-catalog loading still requires
+matching endpoint geometry and attachments. Additional terminals must be present
+at simulation initialization; runtime module creation is not provided here.
 
 `routing-profile.json` records the generated configuration for comparison. It
 is not a completion marker or an automatic compatibility validator.
@@ -116,3 +123,8 @@ is not a completion marker or an automatic compatibility validator.
 Route saves, logs, results, generated INIs, the generated profile, and Python
 caches are ignored by Git. The scripts, two example entry INIs, network models,
 and station input remain tracked. No generated corpus is shipped.
+
+The all-station catalogs use `SharedLeoAllStationPairs`, separate from older
+limited-pair catalogs. Regenerate K-path saves before using this setup; refreshing
+the INI files alone does not produce route data. Generation covers many more
+pairs, so use fewer `--cores` if concurrent policy generation exceeds memory.

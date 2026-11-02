@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 from collections import OrderedDict
+from itertools import combinations
 from pathlib import Path
 
 
@@ -21,7 +22,7 @@ PING_INTERVAL_SECONDS = 0.05
 PING_START_SECONDS = 1.0
 PING_DRAIN_SECONDS = 2.0
 MAX_RTT_SPREAD_MS = 1000
-K_PATH_SNAPSHOT_SET = "SharedLeoRoutes"
+K_PATH_SNAPSHOT_SET = "SharedLeoAllStationPairs"
 ROUTE_STORE = "../../leoSaves"
 OSG_EARTH_TEXTURE = "../../../../osg-satellites/earth.jpg"
 TOPOLOGIES = ("ISL", "GroundRelay")
@@ -33,17 +34,6 @@ CITY_COORDINATES = {
     "London": (51.5074, -0.1278),
     "Shanghai": (31.2304, 121.4737),
 }
-
-# Separate terminals prevent one pair's selected route from affecting another.
-# Their graph IDs are consecutive, so this order is also the configurator's
-# canonical sorted endpoint-pair order used by KShortestPathPingApp.pathGroup.
-PAIR_DEFINITIONS = (
-    ("SanDiegoToSeattle", "San Diego", "Seattle", 0, 1),
-    ("SeattleToNewYork", "Seattle", "New York", 2, 3),
-    ("SanDiegoToNewYork", "San Diego", "New York", 4, 5),
-    ("NewYorkToLondon", "New York", "London", 6, 7),
-    ("SanDiegoToShanghai", "San Diego", "Shanghai", 8, 9),
-)
 
 # Ordered from least to most restrictive for plots and generated configs.
 POLICIES = OrderedDict(
@@ -76,6 +66,21 @@ def load_ground_stations():
         return list(csv.DictReader(csv_file))
 
 
+# Stable ordering: the city stations first, then every gateway in the input file.
+# One terminal per station; unordered pairs are also the snapshot's canonical order.
+TERMINAL_DEFINITIONS = tuple(
+    [(name, lat, lon) for name, (lat, lon) in CITY_COORDINATES.items()] +
+    [(entry["Location Comment"], entry["Latitude"], entry["Longitude"])
+     for entry in load_ground_stations()]
+)
+PAIR_DEFINITIONS = tuple(
+    ("".join(c for c in TERMINAL_DEFINITIONS[a][0] if c.isalnum()) + "To" +
+     "".join(c for c in TERMINAL_DEFINITIONS[b][0] if c.isalnum()),
+     TERMINAL_DEFINITIONS[a][0], TERMINAL_DEFINITIONS[b][0], a, b)
+    for a, b in combinations(range(len(TERMINAL_DEFINITIONS)), 2)
+)
+
+
 def endpoint_pair_specification():
     return ",".join(
         f"userTerminal[{source_index}]->userTerminal[{destination_index}]"
@@ -98,7 +103,7 @@ def generate_visualization_ini(extra_ground_stations, sim_time_seconds):
     EXPERIMENT_DIR.mkdir(parents=True, exist_ok=True)
     city_ground_stations = list(CITY_COORDINATES.items())
     num_ground_stations = len(city_ground_stations) + len(extra_ground_stations)
-    terminal_count = 2 * len(PAIR_DEFINITIONS)
+    terminal_count = len(TERMINAL_DEFINITIONS)
     routing_directory_prefix = f"{ROUTE_STORE}/1584_550_72_22_53_{num_ground_stations}"
     routing_directory = f"{routing_directory_prefix}_ISL"
     terminal_pairs = ",".join(
@@ -154,16 +159,10 @@ def generate_visualization_ini(extra_ground_stations, sim_time_seconds):
             write_line(f, f"*.groundStation[{ground_station_index}].longitude = {entry['Longitude']}")
         write_line(f)
 
-        for pair_key, source_city, destination_city, source_index, destination_index in PAIR_DEFINITIONS:
-            source_latitude, source_longitude = CITY_COORDINATES[source_city]
-            destination_latitude, destination_longitude = CITY_COORDINATES[destination_city]
-            write_line(f, f"# {pair_key}")
-            write_line(f, f'*.userTerminal[{source_index}].label = "{quote_ini_string(source_city)}"')
-            write_line(f, f"*.userTerminal[{source_index}].latitude = {source_latitude}")
-            write_line(f, f"*.userTerminal[{source_index}].longitude = {source_longitude}")
-            write_line(f, f'*.userTerminal[{destination_index}].label = "{quote_ini_string(destination_city)}"')
-            write_line(f, f"*.userTerminal[{destination_index}].latitude = {destination_latitude}")
-            write_line(f, f"*.userTerminal[{destination_index}].longitude = {destination_longitude}")
+        for index, (label, latitude, longitude) in enumerate(TERMINAL_DEFINITIONS):
+            write_line(f, f'*.userTerminal[{index}].label = "{quote_ini_string(label)}"')
+            write_line(f, f"*.userTerminal[{index}].latitude = {latitude}")
+            write_line(f, f"*.userTerminal[{index}].longitude = {longitude}")
         write_line(f)
 
         for policy_name, policy in POLICIES.items():
@@ -204,7 +203,7 @@ def generate_ini(sim_time_seconds=300):
     extra_ground_stations = load_ground_stations()
     city_ground_stations = list(CITY_COORDINATES.items())
     num_ground_stations = len(city_ground_stations) + len(extra_ground_stations)
-    terminal_count = 2 * len(PAIR_DEFINITIONS)
+    terminal_count = len(TERMINAL_DEFINITIONS)
 
     EXPERIMENT_DIR.mkdir(parents=True, exist_ok=True)
     with INI_FILE.open("w", encoding="utf-8") as f:
@@ -312,34 +311,12 @@ def generate_ini(sim_time_seconds=300):
             write_line(f, f"**.groundStation[{ground_station_index}].mobility.longitude = {entry['Longitude']}")
             write_line(f)
 
-        for pair_group, (pair_key, source_city, destination_city, source_index, destination_index) in enumerate(PAIR_DEFINITIONS):
-            source_latitude, source_longitude = CITY_COORDINATES[source_city]
-            destination_latitude, destination_longitude = CITY_COORDINATES[destination_city]
-            write_line(f, f"# {pair_key}")
-            write_line(f, f'*.userTerminal[{source_index}].terminalName = "{source_city} source"')
-            write_line(f, f"*.userTerminal[{source_index}].mobility.latitude = {source_latitude}")
-            write_line(f, f"*.userTerminal[{source_index}].mobility.longitude = {source_longitude}")
-            write_line(f, f'*.userTerminal[{destination_index}].terminalName = "{destination_city} destination"')
-            write_line(f, f"*.userTerminal[{destination_index}].mobility.latitude = {destination_latitude}")
-            write_line(f, f"*.userTerminal[{destination_index}].mobility.longitude = {destination_longitude}")
-            for path_index in range(1, PATH_COUNT + 1):
-                app_index = path_index - 1
-                start_time = PING_START_SECONDS + pair_group * 0.002 + app_index * 0.01
-                app = f"*.userTerminal[{source_index}].app[{app_index}]"
-                write_line(
-                    f,
-                    f'{app}.typename = "leosatellites.applications.pingapp.KShortestPathPingApp"',
-                )
-                write_line(f, f'{app}.destAddr = "userTerminal[{destination_index}]"')
-                write_line(f, f"{app}.pathGroup = {pair_group}")
-                write_line(f, f"{app}.pathIndex = {path_index}")
-                write_line(f, f"{app}.startTime = {start_time:.3f}s")
-                write_line(f, f"{app}.stopTime = {sim_time_seconds - PING_DRAIN_SECONDS:g}s")
-                write_line(f, f"{app}.sendInterval = {PING_INTERVAL_SECONDS:g}s")
-                write_line(f, f"{app}.packetSize = 56B")
-                write_line(f, f"{app}.count = -1")
-                write_line(f, f"{app}.printPing = false")
-            write_line(f)
+        for index, (label, latitude, longitude) in enumerate(TERMINAL_DEFINITIONS):
+            write_line(f, f'*.userTerminal[{index}].terminalName = "{quote_ini_string(label)}"')
+            write_line(f, f"*.userTerminal[{index}].mobility.latitude = {latitude}")
+            write_line(f, f"*.userTerminal[{index}].mobility.longitude = {longitude}")
+        write_line(f, "*.userTerminal[*].numApps = 0")
+        write_line(f)
 
         write_line(f, "[Config GenerateShortestPaths]")
         write_line(f, "extends = General")
@@ -358,16 +335,6 @@ def generate_ini(sim_time_seconds=300):
             write_line(f, "*.configurator.allowRouteSnapshotOverwrite = true")
             write_policy_parameters(f, policy)
             write_line(f, f'description = "Generate {policy["label"]} K-path snapshots"')
-            write_line(f)
-
-            write_line(f, f"[Config Ping_{policy_name}]")
-            write_line(f, "extends = General")
-            write_line(f, '*.configurator.kPathSnapshotMode = "load"')
-            write_line(f, "*.configurator.kPathPingRouting = true")
-            for _, _, _, source_index, _ in PAIR_DEFINITIONS:
-                write_line(f, f"*.userTerminal[{source_index}].numApps = {PATH_COUNT}")
-            write_policy_parameters(f, policy)
-            write_line(f, f'description = "Probe {policy["label"]} paths 1-{PATH_COUNT}"')
             write_line(f)
 
         # Keep the existing ISL configurations and corpora intact. The routing
@@ -392,7 +359,7 @@ def generate_ini(sim_time_seconds=300):
         "mobility_update_seconds": 0.1, "handover_update_seconds": 15,
         "duration_seconds": sim_time_seconds,
         "cities": CITY_COORDINATES, "extra_ground_stations": extra_ground_stations,
-        "pairs": PAIR_DEFINITIONS, "path_count": PATH_COUNT,
+        "terminals": TERMINAL_DEFINITIONS, "pairs": PAIR_DEFINITIONS, "path_count": PATH_COUNT,
         "snapshot_set": K_PATH_SNAPSHOT_SET, "max_rtt_spread_ms": MAX_RTT_SPREAD_MS,
     }
     (EXPERIMENT_DIR / "routing-profile.json").write_text(json.dumps(profile, indent=2) + "\n")

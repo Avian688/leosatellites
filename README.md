@@ -267,7 +267,8 @@ of the selected queue and transport implementation.
 
 For transport-independent primary/K-path generation and the 3D viewer, use the
 [shared routing examples](simulations/examples/routing/README.md). Both modes
-share the same ten terminals, ground stations, and `simulations/leoSaves` store.
+share one terminal per ground station, all terminal pairs, and the
+`simulations/leoSaves` store.
 
 
 Dynamic shortest-path calculation is expensive for a large constellation.

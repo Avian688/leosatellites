@@ -40,7 +40,7 @@ def resolve_pair(value: str) -> tuple[int, str]:
         if normalized in aliases:
             return index, key
 
-    choices = ", ".join(f"{index + 1}={pair[0]}" for index, pair in enumerate(PAIR_DEFINITIONS))
+    choices = f"a pair number from 1 to {len(PAIR_DEFINITIONS)} or a station-pair name"
     raise argparse.ArgumentTypeError(f"unknown pair '{value}'; choose {choices}")
 
 
@@ -67,7 +67,7 @@ def parse_args():
         "--pair",
         type=resolve_pair,
         default=resolve_pair("1"),
-        help="Pair number (1-5) or name, such as SanDiegoToShanghai",
+        help=f"Pair number (1-{len(PAIR_DEFINITIONS)}) or name, such as SanDiegoToShanghai",
     )
     parser.add_argument("--sim-time", type=float, default=300)
     parser.add_argument(

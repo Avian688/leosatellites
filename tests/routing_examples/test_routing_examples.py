@@ -35,7 +35,18 @@ class RoutingExamplesTests(unittest.TestCase):
                         prefix = '**' if kind == 'groundStation' else '*'
                         self.assertEqual(general[f'{prefix}.{kind}[{index}].mobility.{coordinate}'],
                                          display[f'*.{kind}[{index}].{coordinate}'])
-            self.assertEqual(general['**.numOfUserTerminals'], '10')
+            count = int(general['**.numOfGS'])
+            self.assertEqual(int(general['**.numOfUserTerminals']), count)
+            expected = {(a, b) for a in range(count) for b in range(a + 1, count)}
+            self.assertEqual({(a,b) for _,_,_,a,b in generator.PAIR_DEFINITIONS}, expected)
+            self.assertEqual(len(generator.PAIR_DEFINITIONS), count * (count - 1) // 2)
+            self.assertEqual(general['*.configurator.kPathEndpointPairs'].strip('"'), generator.endpoint_pair_specification())
+            self.assertEqual(display['*.pathVisualizer.endpointPairs'].strip('"'),
+                             ','.join(f'{a}-{b}' for a,b in sorted(expected)))
+            for index in range(count):
+                for coordinate in ('latitude', 'longitude'):
+                    self.assertEqual(general[f'**.groundStation[{index}].mobility.{coordinate}'],
+                                     general[f'*.userTerminal[{index}].mobility.{coordinate}'])
             self.assertNotIn('.app[', (root/'topology.ini').read_text())
             self.assertEqual(routing['Config GenerateShortestPaths']['**.loadFiles'], 'false')
             self.assertEqual(routing['Config Generate_EdgeDisjoint']['*.configurator.kPathSnapshotMode'], '"generate"')
