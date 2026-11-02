@@ -8,7 +8,6 @@
 #include <inet/networklayer/common/NetworkInterface.h>
 #include <inet/linklayer/ppp/Ppp.h>
 #include <inet/networklayer/ipv4/Ipv4InterfaceData.h>
-#include <inet/queueing/queue/PacketQueue.h>
 #include <inet/common/lifecycle/LifecycleController.h>
 #include <omnetpp/cdataratechannel.h>
 

@@ -9,8 +9,9 @@ cleanall: checkmakefiles
 	cd src && $(MAKE) MODE=debug clean
 	rm -f src/Makefile
 
-makefiles:
-	cd src && opp_makemake -f --deep
+.PHONY: setup makefiles
+setup makefiles:
+	python3 setup.py
 
 checkmakefiles:
 	@if [ ! -f src/Makefile ]; then \

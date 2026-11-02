@@ -7,7 +7,7 @@ ground-station K paths are never generated unless those modules are represented
 by actual end hosts outside the routable core.
 
 The companion files remove Yen calculations from normal protocol runs. They do
-not assign MPTCP/MPORB subflows to paths. Normal packets still use the primary
+not assign transport subflows to paths. Normal packets still use the primary
 route, while the optional `KShortestPathPingApp` instrumentation can force ICMP
 echo packets over a selected saved node sequence for path-comparison experiments.
 
@@ -47,7 +47,7 @@ are preferable when only a subset carries multipath traffic.
 
 ## Load A Path Set
 
-Normal MPTCP/MPORB runs use the same endpoint geometry, path policy, pair list,
+Consumer simulations use the same endpoint geometry, path policy, pair list,
 and set name:
 
 ```ini

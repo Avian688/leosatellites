@@ -25,6 +25,7 @@
 #include <inet/common/lifecycle/ModuleOperations.h>
 
 #include "LeoChannelConstructor.h"
+#include "LeoQueueDefaults.h"
 #include "UserTerminalHandoverOracle.h"
 
 using namespace std;
@@ -114,6 +115,8 @@ void LeoChannelConstructor::initialize(int stage)
         networkName = parent->getName();
         linkDataRate = par("dataRate").doubleValue();
         queueSize = par("queueSize");
+        if (queueSize < -1)
+            throw cRuntimeError("queueSize must be -1 (unlimited) or a non-negative packet count");
         interfaceType = par("interfaceType").stringValue();
         cacheNetworkModules();
 
@@ -1027,7 +1030,10 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
             }
 
             module = pppModuleType->create("ppp", mod, i);
-            //module->getSubmodule("queue")->par("packetCapacity") = 102;
+            // Supply a default before building children, not a runtime mutation of
+            // a queue-specific parameter. Explicit queue.packetCapacity settings
+            // take precedence, and queues without that parameter are supported.
+            configureLeoQueueDefaults(module, queueSize);
 
             cChannelType *idealChannelType = cChannelType::get("ned.IdealChannel");
             cChannel *idealChannel = idealChannelType->create("idealChannel");
@@ -1054,17 +1060,10 @@ void LeoChannelConstructor::updatePPPModules(cModule *mod, bool addToGraph)
             physOutGate->connectTo(srcGateOut, idealChannel);
             srcGateIn->connectTo(physInGate, idealChannel2);
 
-            //NetworkInterface* pppInterfaceModule = dynamic_cast<NetworkInterface*>(module);
-            //pppInterfaceModule->addSubmodule(type, name, index)
-            //cModuleType *moduleType = cModuleType::get("inet.queueing.queue.DropTailQueue");
-            //cModule *pppInterfaceMod = moduleType->create("queue", pppInterfaceModule);
-
             module->finalizeParameters();
             module->buildInside();
-            std::string queueSizeString = std::to_string(queueSize);
-            module->getSubmodule("queue")->par("packetCapacity").parse(queueSizeString.c_str());
             module->scheduleStart(simTime());
-            module->callInitialize();  //error here - trying to initisalise already existing module.
+            module->callInitialize();
 
             NetworkInterface* ie = dynamic_cast<NetworkInterface*>(mod->getSubmodule("ppp", i));
             setUpIpLayer(module, ie);

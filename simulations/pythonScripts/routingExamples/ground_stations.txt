@@ -1,0 +1,96 @@
+Latitude,Longitude,Location Comment
+32.816,-113.797,Roll AZ
+33.917,-118.328,Hawthorne CA
+34.604,-117.454,Los Angeles
+37.784,-114.693,Panaca NV
+38.875,-121.707,"Robbins, CA"
+39.057,-122.06,Arbuckle CA
+40.076,-112.355,Vernon UT
+41.093,-110.843,Evanston WY
+41.644,-121.33,Tionesta CA
+43.249,-124.381,Charleston OR
+45.924,-112.513,Butte MT
+46.127,-119.684,Prosser WA
+46.039,-122.808,Kalama WA
+47.694,-122.032,Redmond WA
+48.345,-116.439,Colburn ID
+48.203,-111.945,Conrad MT
+25.99,-97.183,Boca Chica TX
+29.86,-94.312,"Hamshire, TX"
+29.784,-98.051,"New Braunfels, TX"
+30.194,-102.89,Sanderson TX
+31.405,-97.438,McGregor TX
+34.269,-97.213,Springer OK
+35.808,-102.032,"Dumas, TX"
+38.229,-97.922,Inman KS
+39.014,-95.149,"Lawrence, KS"
+38.635,-91.116,Warren MO
+40.334,-95.815,Nemaha NE
+46.408,-103.115,Slope County
+48.66,-99.81,"Rolette, ND"
+47.152,-97.409,"Cass County, ND"
+46.979,-96.258,Hitterdal MN
+47.593,-93.693,Marcell MN
+41.855,-87.859,"Broadview, IL"
+44.406,-90.814,Merrillan WI
+45.909,-86.484,Manistique
+45.073,-83.901,"Hillman, MI"
+26.191,-80.193,Fort Lauderdale
+27.02,-81.762,Punta Gorda FL
+30.567,-87.646,Robertsdale AL
+31.682,-82.269,Baxley GA
+33.955,-84.198,"Norcross, GA"
+34.985,-81.733,"Gaffney, SC"
+35.197,-85.666,"Tracy City, TN"
+35.896,-79.225,Mandale NC
+36.471,-78.173,"Wise, NC"
+41.434,-80.333,Greenville PA
+43.167,-78.755,"Lockport, NY"
+44.531,-68.224,"Sullivan, ME"
+44.412,-71.732,"Lunenburg, VT"
+44.79,-73.48,Beekmantown NY
+46.915,-67.92,Loring ME
+47.561,-52.775,St John's (Newfoundland & Labrador) Developmental
+55.314,-131.586,Ketchikan AK
+64.805,-147.5,"Fairbanks, AK"
+70.318,-148.941,"Kuparuk, AK"
+-27.02,-70.787,Caldera
+-30.0,-71.259,Coquimbo
+-33.393,-70.883,Pudahuel
+-35.556,-71.357,Talca
+-38.815,-73.397,Puerto Saavedra
+-41.487,-73.022,Puerto Montt
+-52.938,-70.857,Punta Arenas
+44.781,-0.537,"Villenave d'Ornon, France"
+50.99,2.158,"Gravelines, France"
+51.615,-0.575,Chalfont Grove
+54.139,-4.497,Isle of Man
+50.33,8.47,Usingen
+52.061,9.328,Aerzen
+-30.848,115.619,"Cataby, WA"
+-31.495,118.278,"Merredin, WA"
+-33.308,117.344,"Wagin, WA"
+-31.251,136.801,"Pimba, SA"
+-35.571,139.817,"Ki Ki, SA"
+-31.998,141.441,"Broken Hill, NSW"
+-36.025,144.5,"Torrumbarry, VIC"
+-34.462,148.706,"Boorowa, NSW"
+-36.389,149.891,"Cobargo, NSW"
+-46.528,168.378,"Awarua, NZ"
+-45.059,169.206,"Cromwell, NZ"
+-43.922,171.89,"Hinds, NZ"
+-36.989,175.055,"Clevedon, NZ"
+-36.237,174.512,Te Hana
+-35.793,174.3,"Puwera, NZ"
+51.953,8.174,Elfordstown
+37.257,-7.203,"Lepe, Huelva"
+40.168,3.287,Madrid
+38.6307,-0.5447,Ibi Alicante
+51.864,20.921,Wola Krobowska
+45.321,9.189,Lacchiarella
+41.507,15.585,Foggia Apulia
+37.711,12.488,Petrosino
+40.789,29.51,Gebze
+48.576,-1.311,Saint-Senier-de-Beuvron
+50.05,-5.179,Goonhilly Earth Station
+41.545,-73.354,Litchfield CT

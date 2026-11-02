@@ -32,11 +32,45 @@ The primary example network is `SatSGP4`, located in
 
 The current project setup targets:
 
-- OMNeT++ 6.x
-- INET 4.5, imported as the `inet4.5` project
+- OMNeT++ 6.x, installed and built with its platform dependencies
+- **[Avian688/inet4.5](https://github.com/Avian688/inet4.5), imported as the `inet4.5` project. This fork is required; do not substitute the upstream INET repository or an IDE-downloaded INET release.**
 - [OS3](https://github.com/Avian688/os3)
-- [igraph](https://igraph.org/) 0.10.x and its development headers
-- A C++17-capable compiler
+- [igraph](https://igraph.org/c/) >= 0.10, including its development headers
+- libcurl development headers and libraries
+- `pkg-config`, Python 3.9 or newer, and Git
+- A C++17-capable compiler and GNU Make 4.x
+- Optional: OpenSceneGraph and an OMNeT++ build with `WITH_OSG=yes` for the
+  Qtenv 3D viewer. The plain OSG viewer does not require osgEarth.
+
+First install OMNeT++ using the [installation guide](https://docs.omnetpp.org/installguide/index)
+for your platform and chosen OMNeT++ version, including its compiler, Qt, and
+Python dependencies. The commands below install the additional LEO dependencies
+and basic build tools; they do not replace the OMNeT++ installation procedure.
+
+On **macOS**, install Xcode Command Line Tools if needed (`xcode-select --install`),
+then use [Homebrew](https://brew.sh/):
+
+```bash
+brew install git python pkgconf make igraph curl
+```
+
+Homebrew's [pkgconf](https://formulae.brew.sh/formula/pkgconf) supplies
+`pkg-config`; its [GNU Make](https://formulae.brew.sh/formula/make) is also
+available as `gmake`. Use GNU Make 4.x rather than macOS's bundled Make 3.81;
+the OMNeT++ environment normally adds Homebrew's GNU Make to `PATH`.
+
+On **Ubuntu 24.04**, install:
+
+```bash
+sudo apt update
+sudo apt install build-essential git python3 pkg-config libigraph-dev libcurl4-openssl-dev
+```
+
+Other distributions need equivalent development packages. Check the installed
+igraph version: older distributions may ship a version below 0.10. Installing
+only the `curl` command-line program is not sufficient; the development package
+is needed. For the optional 3D viewer, follow the OpenSceneGraph instructions in
+the OMNeT++ installation guide before configuring/building OMNeT++.
 
 The expected workspace layout is:
 
@@ -47,37 +81,69 @@ The expected workspace layout is:
 `-- leosatellites/
 ```
 
-The IDE project already references `inet4.5` and `os3`. Build those projects
-before building `leosatellites`.
+For a fresh workspace, clone these repositories into that layout (skip any
+that are already present):
+
+```bash
+cd /path/to/omnetpp/samples
+git clone https://github.com/Avian688/inet4.5.git inet4.5
+git clone https://github.com/Avian688/os3.git os3
+git clone https://github.com/Avian688/leosatellites.git leosatellites
+```
+
+Keep the `inet4.5` and `os3` directory/project names: the IDE project references
+use those names. Import all three projects using **File > Import > General >
+Existing Projects into Workspace**. Generate their Makefiles as required and
+build **Avian688/inet4.5 first, then OS3**, following their own build instructions.
+Use the same build mode (release or debug) for all three projects.
 
 ## Building
 
-The recommended setup uses the OMNeT++ IDE:
+After installing the dependencies above, load the OMNeT++ environment in each
+new terminal and configure LEO:
 
-1. Import `inet4.5`, `os3`, and `leosatellites` into the same workspace.
-2. Open **Project Properties > Project References** and ensure `inet4.5` and
-   `os3` are selected.
-3. Open **Project Properties > OMNeT++ > Makemake**, edit the `src` target, and
-   set the igraph include and library paths for your machine.
-4. Regenerate the `src/Makefile` and build in this order: INET, OS3,
-   `leosatellites`.
+```bash
+cd /path/to/omnetpp
+source setenv
+cd samples/leosatellites
+python3 setup.py --check
+python3 setup.py
+```
 
-The committed Makemake metadata contains example local paths. These paths must
-be updated when the project is cloned onto another machine. After generating a
-valid `src/Makefile`, command-line builds can be run from the project root:
+This detects the installed igraph and curl flags through `pkg-config`, finds
+sibling `inet4.5` and `os3` projects, and runs `opp_makemake` with the shared-library
+settings. On macOS it also discovers Homebrew's package metadata, including
+keg-only curl. It does not install packages, generate INET/OS3 Makefiles, or
+compile any project. Build INET and OS3 separately before compiling LEO.
+
+Machine-specific settings are written to Git-ignored `config.local.mk`.
+`src/makefrag` reads the current package flags for both CLI and IDE builds;
+versioned Homebrew paths and dependency libraries no longer need manual editing.
+After moving the checkout or changing dependency locations, run setup again.
+
+Use these options for a different directory layout or a read-only check:
+
+```bash
+python3 setup.py --inet /path/to/inet --os3 /path/to/os3
+python3 setup.py --check
+```
+
+`INET_ROOT` and `OS3_ROOT` provide defaults for those options. For dependencies
+in custom prefixes, set `PKG_CONFIG_PATH` before setup; explicit search paths
+are preferred over discovered Homebrew paths. `make setup` and `make makefiles`
+also run setup. Run this once after cloning; build INET and OS3 before LEO:
 
 ```bash
 make MODE=release
-make MODE=debug
+# Or: make MODE=debug
 ```
 
-Before using OMNeT++ commands in a terminal, load the OMNeT++ environment from
-the installation root:
-
-```bash
-cd <omnetpp-root>
-. setenv
-```
+For the IDE, import all three projects, keep `inet4.5` and `os3` checked in
+**Project Properties > Project References**, and refresh leosatellites after
+setup. The portable Makemake metadata uses the same `src/makefrag`, so IDE
+Makefile regeneration retains automatic dependency discovery. If the IDE does
+not inherit the terminal's OMNeT++ environment, configure its normal OMNeT++
+installation settings. CLI builds also require that environment.
 
 ## Quick start
 
@@ -162,9 +228,47 @@ dynamically created satellite links:
 *.channelConstructor.interfaceType = "leosatellites.linklayer.ppp.PppInterfaceMutable"
 ```
 
-`queueSize` is applied as the queue's packet capacity.
+Choose the queue independently of the interface, including on interfaces created
+later during a handover:
+
+```ini
+**.ppp[*].queue.typename = "inet.queueing.queue.DropTailQueue"
+```
+
+Use fully qualified NED names, such as `inet.queueing.queue.DropTailQueue`
+or `inet.queueing.queue.DropHeadQueue`. Third-party queues implementing
+`IPacketQueue` can also be selected when their NED path and library are loaded
+by the consuming application. No change to leosatellites is required.
+
+`queueSize` supplies a default packet capacity through the interface's
+`defaultPacketCapacity` construction hook. An explicit queue setting wins:
+
+```ini
+*.satellite[*].ppp[*].queue.packetCapacity = 500
+```
+
+This is configured before queue initialization, so the queue does not need a
+mutable `packetCapacity`. Queues without that parameter are left alone. Compound
+queues may need their inner queues/buffer configured separately; LEO does not
+invent capacity or scheduling semantics for them. A custom PPP interface can
+opt into the same default by declaring `defaultPacketCapacity` and assigning
+`queue.packetCapacity = default(defaultPacketCapacity)` as a parameter pattern.
+Otherwise its own queue configuration is used without constructor overrides.
+
+The queue is a sibling of the `ppp` protocol module: use `ppp[*].queue`,
+not `ppp[*].ppp.queue`.
+
+The compatibility contract is INET's `IPacketQueue` (a passive packet input and
+output compatible with PPP). Required queue-specific parameters still need to
+be configured. Protocol-specific telemetry support remains the responsibility
+of the selected queue and transport implementation.
 
 ## Saved routing snapshots
+
+For transport-independent primary/K-path generation and the 3D viewer, use the
+[shared routing examples](simulations/examples/routing/README.md). Both modes
+share the same ten terminals, ground stations, and `simulations/leoSaves` store.
+
 
 Dynamic shortest-path calculation is expensive for a large constellation.
 `leosatellites` therefore supports a two-stage workflow:
@@ -350,10 +454,13 @@ This is expected for large constellations because all-pairs route information
 is recalculated at each update. Generate the route set once with Cmdenv and no
 visualizer, then use `loadFiles = true` for protocol experiments.
 
-### The project cannot find igraph, INET, or OS3
+### The project cannot find igraph, curl, INET, or OS3
 
-Regenerate the Makemake configuration for the current machine. Do not reuse
-absolute include and library paths from another installation.
+Run `python3 setup.py --check` from an OMNeT++ environment. If package metadata
+is missing, install the corresponding development package or set
+`PKG_CONFIG_PATH`. Use `--inet` and `--os3` for nonstandard project locations,
+then rerun `python3 setup.py` with those options. Do not copy another machine's
+`config.local.mk`.
 
 ## Citation
 

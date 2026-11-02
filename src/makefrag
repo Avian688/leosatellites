@@ -1,3 +1,32 @@
+-include ../config.local.mk
+
+LEO_INET_DIR ?= $(abspath ../../inet4.5)
+LEO_OS3_DIR ?= $(abspath ../../os3)
+LEO_PKG_CONFIG_COMMAND ?= pkg-config
+LEO_DEPS_OK := $(shell $(LEO_PKG_CONFIG_COMMAND) --exists 'igraph >= 0.10' libcurl && echo yes)
+ifneq ($(LEO_DEPS_OK),yes)
+$(error igraph/libcurl development packages not found. Run python3 setup.py from the project root)
+endif
+LEO_CFLAGS := $(shell $(LEO_PKG_CONFIG_COMMAND) --cflags igraph libcurl)
+LEO_LIBS := $(shell $(LEO_PKG_CONFIG_COMMAND) --libs igraph libcurl)
+INCLUDE_PATH += -I"$(LEO_INET_DIR)/src" -I"$(LEO_OS3_DIR)/src"
+COPTS += -DINET_IMPORT $(LEO_CFLAGS)
+LIBS += -L"$(LEO_INET_DIR)/src" -L"$(LEO_OS3_DIR)/src" -lINET$(D) -los3$(D) $(LEO_LIBS)
+ifneq ($(PLATFORM),win32)
+LIBS += -Wl,-rpath,"$(LEO_INET_DIR)/src" -Wl,-rpath,"$(LEO_OS3_DIR)/src"
+LEO_COMMA := ,
+LIBS += $(patsubst -L%,-Wl$(LEO_COMMA)-rpath$(LEO_COMMA)%,$(filter -L%,$(LEO_LIBS)))
+endif
+
+# Makemake's own flag stamp is evaluated before this fragment. Track the
+# discovered flags separately so dependency upgrades trigger recompilation.
+LEO_FLAGS_FILE = $O/.leo-dependency-flags
+ifneq ("$(COPTS) $(LIBS)","$(shell cat $(LEO_FLAGS_FILE) 2>/dev/null)")
+  $(shell $(MKPATH) "$O")
+  $(file >$(LEO_FLAGS_FILE),$(COPTS) $(LIBS))
+endif
+$(OBJS): $(LEO_FLAGS_FILE)
+
 ifeq ($(WITH_OSG),yes)
 OMNETPP_LIBS += $(OSG_LIBS) -losgDB -losgText
 endif

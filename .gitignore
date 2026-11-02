@@ -6,6 +6,7 @@
 /simulations/Experiment2
 /simulations/Experiment3
 # local and generated files not to be committed
+/config.local.mk
 
 
 *_m.h
@@ -75,6 +76,16 @@ netanim-trace.txt
 /tests/route_snapshots/RouteSnapshotTests
 /tests/k_shortest_paths/KShortestPathTests
 /tools/route_snapshots/leo_route_snapshot_tool
+
+# Shared routing examples: route corpora and generated experiment artifacts
+/simulations/leoSaves/
+/simulations/logs/routingExamples/
+/simulations/examples/routing/results/
+/simulations/examples/routing/routing.ini
+/simulations/examples/routing/visualize.ini
+/simulations/examples/routing/topology.ini
+/simulations/examples/routing/routing-profile.json
+/simulations/pythonScripts/routingExamples/__pycache__/
 
 # ignore backup and temp files
 *.UPDATED

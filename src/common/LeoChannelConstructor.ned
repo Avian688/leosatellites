@@ -22,8 +22,8 @@ simple LeoChannelConstructor
 	   string addressBase = default("10.0.0.0");    // start of address range from which to automatically assign an address to the autoassignInterfaces
        string netmask = default("255.0.0.0"); 
        double dataRate @unit(bps) = default(10Mbps);
-       int queueSize = default(1000);
-       string interfaceType = default("leosatellites.linklayer.ppp.PppInterfaceMutable"); //Required if you need different queues.
+       int queueSize = default(1000); // Default packet capacity; explicit ppp[*].queue.packetCapacity takes precedence. -1 means unlimited.
+       string interfaceType = default("leosatellites.linklayer.ppp.PppInterfaceMutable"); // Select queues with ppp[*].queue.typename; no custom interface is needed.
        string handoverOracleModule = default("^.handoverOracle"); // Optional UserTerminalHandoverOracle module.
        double userTerminalUpdateInterval @unit(s) = default(15s);
        double userTerminalSampleInterval @unit(s) = default(1s);

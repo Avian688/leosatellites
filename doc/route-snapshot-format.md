@@ -80,9 +80,8 @@ Select a corpus root with the existing OMNeT++ parameter:
 *.configurator.configLocation = "/path/to/ROUTING_ROOT"
 ```
 
-The Experiment 8 generator also accepts this root through
-`LEO_ROUTING_CORPUS_ROOT`. An empty value preserves the current working-directory
-behavior.
+Relative roots are resolved from the simulation working directory. For reusable
+examples, see [shared routing generation](../simulations/examples/routing/README.md).
 
 ## Conversion
 
