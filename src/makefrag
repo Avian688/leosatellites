@@ -1,3 +1,7 @@
+# This fragment is included before Makemake declares all. Its object
+# prerequisites must not become the default build target.
+.DEFAULT_GOAL := all
+
 -include ../config.local.mk
 
 LEO_INET_DIR ?= $(abspath ../../inet4.5)
