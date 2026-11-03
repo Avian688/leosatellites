@@ -6,10 +6,26 @@ experiment. They need INET, OS3, and leosatellites. Run the commands below from 
 The common scenario has 1,584 satellites, 72 planes, 22 satellites per plane,
 550 km altitude, 53-degree inclination, and 100 ms mobility updates. It uses
 a shared ordered ground-station list (five city stations plus the supplied
-gateways). There is exactly one user terminal at each ground-station location,
-with matching array indices. The supplied list gives **100 terminals and 4,950
-unordered terminal pairs**. Every pair is included in each K-path policy catalog;
-reverse-direction queries reuse the same saved group.
+gateways). There are **15 user terminals and exactly ten saved terminal pairs**:
+
+| Source | Destination | Terminal IDs |
+| --- | --- | --- |
+| San Diego | Seattle | 0 → 1 |
+| Seattle | New York | 1 → 2 |
+| San Diego | New York | 0 → 2 |
+| New York | London | 2 → 3 |
+| San Diego | Shanghai | 0 → 4 |
+| Newark | Bristol | 5 → 10 |
+| Jersey City | Cardiff | 6 → 11 |
+| Yonkers | Manchester | 7 → 12 |
+| Stamford | Edinburgh | 8 → 13 |
+| White Plains | Belfast | 9 → 14 |
+
+The last five pairs provide a transatlantic congestion scenario: five separate
+terminals around New York each have one destination throughout the UK. Consumer
+experiments can enable these five flows simultaneously. Saving itself generates
+routes without traffic; geographic proximity does not guarantee a shared
+bottleneck at every time. Reverse queries reuse the same saved group.
 
 K-path endpoints are user terminals only. Ground stations remain possible core
 relays. The first and last terminal-to-satellite access links may be shared across
@@ -95,7 +111,7 @@ Use an experiment-owned result directory. Add leosatellites to the consuming
 project's references and include its `src` and `simulations` NED roots at launch.
 
 For multipath consumers set `kPathSnapshotMode = "load"`,
-`kPathSnapshotSet = "SharedLeoAllStationPairs"`, `numOfKPaths = 10`, and
+`kPathSnapshotSet = "SharedLeoTenPairs"`, `numOfKPaths = 10`, and
 `kPathMaxRttSpread = 1000ms`, with the desired `kPathsEdgeDisjoint` /
 `kPathMaxSharedLinks` policy. Keep the endpoint-pair specification from the
 shared include. Transport route selection still needs its normal configuration
@@ -105,13 +121,13 @@ catalog without changing the catalog's `numOfKPaths`.
 
 For later experiments with additional terminals, use `kPathSnapshotMode = "load"`
 and set `kPathCoreSnapshotProfile` to the existing policy-profile directory name
-under `kpaths/SharedLeoAllStationPairs/`. Configure the consumer's traffic pairs.
+under `kpaths/SharedLeoTenPairs/`. Configure the consumer's traffic pairs.
 This reuses saved core ranks and appends the current first and last access links,
 without recomputing K paths. The satellite/ground-station core, its geometry,
 node ordering and mobility timing must match the primary saves.
 
 Each consumer's serving-satellite pair must be covered by the saved catalog at
-that time. This setup covers all station-location terminal pairs; it does not
+that time. This setup covers only the ten listed terminal pairs; it does not
 promise every possible satellite pair for arbitrary other geographic locations.
 Without `kPathCoreSnapshotProfile`, exact saved-catalog loading still requires
 matching endpoint geometry and attachments. Additional terminals must be present
@@ -124,7 +140,10 @@ Route saves, logs, results, generated INIs, the generated profile, and Python
 caches are ignored by Git. The scripts, two example entry INIs, network models,
 and station input remain tracked. No generated corpus is shipped.
 
-The all-station catalogs use `SharedLeoAllStationPairs`, separate from older
-limited-pair catalogs. Regenerate K-path saves before using this setup; refreshing
-the INI files alone does not produce route data. Generation covers many more
-pairs, so use fewer `--cores` if concurrent policy generation exceeds memory.
+The ten-pair catalogs use `SharedLeoTenPairs`, separate from previous catalogs.
+Existing primary saves can be reused when the satellite/ground-station core,
+node ordering, topology and update timing are unchanged and the saves cover the
+requested duration. Changing only terminal locations/counts or selected pairs
+does not require regenerating primary saves: use `saveRoutes.py --mode multiple
+--start-step 2 --cores 7`. Generate new K-path catalogs for this terminal layout;
+refreshing INIs alone does not produce route data.

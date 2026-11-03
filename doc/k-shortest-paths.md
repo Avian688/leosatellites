@@ -11,37 +11,6 @@ not assign transport subflows to paths. Normal packets still use the primary
 route, while the optional `KShortestPathPingApp` instrumentation can force ICMP
 echo packets over a selected saved node sequence for path-comparison experiments.
 
-## Reuse primary saves with new terminals
-
-Configure any number of terminals before simulation initialization, keeping the
-satellite/ground-station core and its timing unchanged. Load the original primary
-saves and compute K paths for the new traffic pairs without creating K-path files:
-
-```ini
-**.loadFiles = true
-*.configurator.configLocation = "/path/to/leoSaves"
-*.configurator.kPathSnapshotMode = "compute"
-*.configurator.kPathCoreSnapshotProfile = ""
-*.configurator.numOfKPaths = 10
-*.configurator.kPathMaxRttSpread = 1000ms
-*.configurator.kPathsEdgeDisjoint = true
-*.configurator.kPathMaxSharedLinks = -1
-*.configurator.kPathEndpointPairs = "userTerminal[0]->userTerminal[1],userTerminal[2]->userTerminal[3]"
-```
-
-No endpoint-specific saved catalog or snapshot-set name is required. Paths are
-computed from the live weighted core at routing updates and after attachment
-changes. The saved primary shortest-path tables alone cannot encode alternative
-paths: this mode reuses those saves and performs the additional K-path searches
-during the consumer run. List active traffic pairs to avoid computing all pairs
-as terminal counts grow (`all` computes every unordered endpoint pair).
-
-Edge-disjointness applies only to core links. All ranks may share each terminal's
-single satellite access link; those links and their delays are appended after
-the disjoint core search. This does not add terminal creation after initialization
-or guarantee unlimited memory/CPU capacity. Packet path selection remains the
-responsibility of the transport or the K-path ping application.
-
 ## Generate A Path Set
 
 Use the endpoint geometry for the experiment, load the existing primary routing

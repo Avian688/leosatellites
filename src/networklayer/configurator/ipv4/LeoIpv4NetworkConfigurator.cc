@@ -157,8 +157,8 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
 
         updateModuleIDMappingsClientServer();
         initializeKPathSnapshotConfiguration();
-        if (kPathPingRouting && kPathSnapshotMode != KPathSnapshotMode::Load && kPathSnapshotMode != KPathSnapshotMode::Compute)
-            throw cRuntimeError("kPathPingRouting requires kPathSnapshotMode=load or compute");
+        if (kPathPingRouting && kPathSnapshotMode != KPathSnapshotMode::Load)
+            throw cRuntimeError("kPathPingRouting requires kPathSnapshotMode=load");
 
         igraph_vector_int_init(&islVec, 0);
     }
@@ -190,14 +190,12 @@ void LeoIpv4NetworkConfigurator::initializeKPathSnapshotConfiguration()
     const std::string mode = trimWhitespace(par("kPathSnapshotMode").stringValue());
     if (mode == "disabled")
         kPathSnapshotMode = KPathSnapshotMode::Disabled;
-    else if (mode == "compute")
-        kPathSnapshotMode = KPathSnapshotMode::Compute;
     else if (mode == "generate")
         kPathSnapshotMode = KPathSnapshotMode::Generate;
     else if (mode == "load")
         kPathSnapshotMode = KPathSnapshotMode::Load;
     else
-        throw cRuntimeError("Unknown kPathSnapshotMode '%s'; expected disabled, compute, generate, or load",
+        throw cRuntimeError("Unknown kPathSnapshotMode '%s'; expected disabled, generate, or load",
                             mode.c_str());
 
     if (!kPathCoreSnapshotProfile.empty() && (kPathSnapshotMode != KPathSnapshotMode::Load ||
@@ -212,11 +210,6 @@ void LeoIpv4NetworkConfigurator::initializeKPathSnapshotConfiguration()
         throw cRuntimeError("kPathSnapshotMode=%s requires numOfKPaths > 1", mode.c_str());
     if (kPathSnapshotMode == KPathSnapshotMode::Load && !loadFiles)
         throw cRuntimeError("kPathSnapshotMode=load requires loadFiles=true");
-
-    if (kPathSnapshotMode == KPathSnapshotMode::Compute) {
-        initializeKPathEndpointPairs();
-        return;
-    }
 
     kPathSnapshotSet = trimWhitespace(kPathSnapshotSet);
     if (kPathSnapshotSet.empty())
@@ -434,10 +427,6 @@ void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterva
         if(!completedLoad){
             std::cerr << "WARNING: Failed to load routing files at simtime: " << simTime() << " Make sure you generate routing files before using loadFile = false in ini file." << endl;
         }
-        else if (kPathSnapshotMode == KPathSnapshotMode::Compute) {
-            rebuildCurrentPathTopology();
-            computeCurrentKPaths();
-        }
         else if (kPathSnapshotMode == KPathSnapshotMode::Generate) {
             rebuildCurrentPathTopology();
             generateKPathSnapshot(currentInterval, stableRouteState);
@@ -448,8 +437,6 @@ void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterva
     }
     else{
         generateTopologyGraph(currentInterval);
-        if (kPathSnapshotMode == KPathSnapshotMode::Compute)
-            computeCurrentKPaths();
         if (kPathSnapshotMode == KPathSnapshotMode::Generate)
             generateKPathSnapshot(currentInterval, generatedRouteState);
     }
@@ -1104,8 +1091,6 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
             currentKPathGroups.clear();
         else
             extendSavedCoreKPathGroups();
-        if (kPathSnapshotMode == KPathSnapshotMode::Compute && currentPathTopology.isInitialized())
-            computeCurrentKPaths();
     }
 }
 
@@ -1198,19 +1183,6 @@ leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::computeCanonicalKShor
         path.nodeIds.push_back(group.destinationNodeId);
     }
     return group;
-}
-
-void LeoIpv4NetworkConfigurator::computeCurrentKPaths()
-{
-    // Compute only the configured traffic pairs. Access links are appended by
-    // computeCanonicalKShortestPathGroup AFTER the core disjointness search.
-    std::unordered_map<uint64_t, leoRouting::KShortestPathGroup> catalog;
-    catalog.reserve(configuredKPathEndpointPairs.size());
-    for (const auto& [source, destination] : configuredKPathEndpointPairs) {
-        auto group = computeCanonicalKShortestPathGroup(source, destination);
-        catalog.emplace(leoRouting::kPathEndpointPairKey(source, destination), std::move(group));
-    }
-    currentKPathGroups.swap(catalog);
 }
 
 void LeoIpv4NetworkConfigurator::generateKPathSnapshot(

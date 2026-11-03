@@ -6,7 +6,6 @@ import argparse
 import csv
 import json
 from collections import OrderedDict
-from itertools import combinations
 from pathlib import Path
 
 
@@ -22,7 +21,7 @@ PING_INTERVAL_SECONDS = 0.05
 PING_START_SECONDS = 1.0
 PING_DRAIN_SECONDS = 2.0
 MAX_RTT_SPREAD_MS = 1000
-K_PATH_SNAPSHOT_SET = "SharedLeoAllStationPairs"
+K_PATH_SNAPSHOT_SET = "SharedLeoTenPairs"
 ROUTE_STORE = "../../leoSaves"
 OSG_EARTH_TEXTURE = "../../../../osg-satellites/earth.jpg"
 TOPOLOGIES = ("ISL", "GroundRelay")
@@ -66,18 +65,28 @@ def load_ground_stations():
         return list(csv.DictReader(csv_file))
 
 
-# Stable ordering: the city stations first, then every gateway in the input file.
-# One terminal per station; unordered pairs are also the snapshot's canonical order.
+# Five city endpoints and ten dedicated transatlantic endpoints. Keep IDs stable.
 TERMINAL_DEFINITIONS = tuple(
-    [(name, lat, lon) for name, (lat, lon) in CITY_COORDINATES.items()] +
-    [(entry["Location Comment"], entry["Latitude"], entry["Longitude"])
-     for entry in load_ground_stations()]
+    [(name, lat, lon) for name, (lat, lon) in CITY_COORDINATES.items()] + [
+        ("Newark", 40.7357, -74.1724),
+        ("Jersey City", 40.7178, -74.0431),
+        ("Yonkers", 40.9312, -73.8987),
+        ("Stamford", 41.0534, -73.5387),
+        ("White Plains", 41.0340, -73.7629),
+        ("Bristol", 51.4545, -2.5879),
+        ("Cardiff", 51.4816, -3.1791),
+        ("Manchester", 53.4808, -2.2426),
+        ("Edinburgh", 55.9533, -3.1883),
+        ("Belfast", 54.5973, -5.9301),
+    ]
 )
+# Canonical pair order also determines the viewer's saved-group indices.
 PAIR_DEFINITIONS = tuple(
     ("".join(c for c in TERMINAL_DEFINITIONS[a][0] if c.isalnum()) + "To" +
      "".join(c for c in TERMINAL_DEFINITIONS[b][0] if c.isalnum()),
      TERMINAL_DEFINITIONS[a][0], TERMINAL_DEFINITIONS[b][0], a, b)
-    for a, b in combinations(range(len(TERMINAL_DEFINITIONS)), 2)
+    for a, b in sorted([(0, 1), (1, 2), (0, 2), (2, 3), (0, 4)] +
+                       [(i, i + 5) for i in range(5, 10)])
 )
 
 
