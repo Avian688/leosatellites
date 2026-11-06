@@ -59,6 +59,10 @@ protected:
     virtual double computeWiredLinkWeight(Link *link, const char *metric, cXMLElement *parameters=nullptr) override;
     virtual int getNextHopInterfaceID(cModule* sourceSatellite, cModule* nextHopSatellite);
     virtual void assignIDtoModules();
+    simtime_t replayStart = SIMTIME_ZERO;
+    simtime_t lastEndpointChange = SIMTIME_ZERO;
+    simtime_t replayLastEndpointChange = SIMTIME_ZERO;
+    void restoreReplayRoutes();
     virtual bool loadConfiguration(simtime_t currentInterval);
     virtual ~LeoIpv4NetworkConfigurator();
 
@@ -154,6 +158,8 @@ protected:
     std::unordered_map<int, int> endpointUplinkInterfaceIds; // endPointModID → interface ID on endpoint
 
 public:
+    simtime_t getLastEndpointChangeTime() const { return lastEndpointChange; }
+    void setReplayLastEndpointChangeTime(simtime_t originalTime) { replayLastEndpointChange = originalTime; }
     virtual void establishInitialISLs();
     virtual void updateForwardingStates(simtime_t currentInterval);
     virtual void generateTopologyGraph(simtime_t currentInterval);

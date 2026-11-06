@@ -21,6 +21,9 @@ simple LeoChannelConstructor
 	   @class("inet::LeoChannelConstructor");
 	   string addressBase = default("10.0.0.0");    // start of address range from which to automatically assign an address to the autoassignInterfaces
        string netmask = default("255.0.0.0"); 
+       double replayStart @unit(s) = default(0s); // Single orbit/topology/route offset; positive starts require a captured state.
+       double captureReplayAt @unit(s) = default(-1s); // Capture just before this original time; -1 disables capture.
+       string replayStateFile = default(""); // Capture output or replay input (.leoreplay).
        double dataRate @unit(bps) = default(10Mbps);
        int queueSize = default(1000); // Default packet capacity; explicit ppp[*].queue.packetCapacity takes precedence. -1 means unlimited.
        string interfaceType = default("leosatellites.linklayer.ppp.PppInterfaceMutable"); // Select queues with ppp[*].queue.typename; no custom interface is needed.

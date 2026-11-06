@@ -80,6 +80,11 @@ void LeoIpv4NetworkConfigurator::initialize(int stage)
         // Read module and configuration parameters
         networkName = parent->getName();
         loadFiles = par("loadFiles");
+        cModule *constructor = parent->getSubmodule("channelConstructor");
+        if (constructor && constructor->hasPar("replayStart"))
+            replayStart = constructor->par("replayStart");
+        if (replayStart > SIMTIME_ZERO && !loadFiles)
+            throw cRuntimeError("replayStart requires saved primary routes (loadFiles=true)");
         allowRouteSnapshotOverwrite = par("allowRouteSnapshotOverwrite");
         logRouteSnapshotStats = par("logRouteSnapshotStats");
         minLinkWeight = par("minLinkWeight");
@@ -204,6 +209,8 @@ void LeoIpv4NetworkConfigurator::initializeKPathSnapshotConfiguration()
             return std::isalnum(c) || c == '_' || c == '-' || c == '.';
         })))
         throw cRuntimeError("kPathCoreSnapshotProfile requires load mode and one safe profile directory name");
+    if (replayStart > SIMTIME_ZERO && kPathSnapshotMode == KPathSnapshotMode::Generate)
+        throw cRuntimeError("Replay requires K paths disabled or loaded, not generated");
     if (kPathSnapshotMode == KPathSnapshotMode::Disabled)
         return;
     if (numOfKPaths <= 1)
@@ -420,8 +427,36 @@ void LeoIpv4NetworkConfigurator::assignIDtoModules()
     }
 }
 
+void LeoIpv4NetworkConfigurator::restoreReplayRoutes()
+{
+    cModule *mobility = getParentModule()->getSubmodule("satellite", 0)->getSubmodule("mobility");
+    const simtime_t step = mobility->par("updateInterval");
+    auto restored = leoRouting::readReplayRouteState(getRoutingDirectory(),
+        leoRouting::parseTimestampMicros(replayStart.str()),
+        leoRouting::parseTimestampMicros(step.str()), numOfSats + numOfGS);
+    routeSnapshotFilesRead += restored.filesRead;
+    routeSnapshotBytesRead += restored.bytesRead;
+    routeRecordsDecoded += restored.recordsDecoded;
+    nextKPathSnapshotSequence = restored.state.hasSequenceMetadata() ? restored.state.sequence() :
+        static_cast<int>(restored.filesRead - 1);
+    applyFullRouteState(std::move(restored.state));
+    const simtime_t snapshotTime = SimTime(restored.timestampMicros, SIMTIME_US);
+    // A continuous run clears its endpoint catalog when attachments change
+    // between snapshots. Preserve that gap until the next regular snapshot.
+    if (kPathSnapshotMode == KPathSnapshotMode::Load &&
+        (!kPathCoreSnapshotProfile.empty() || replayLastEndpointChange <= snapshotTime))
+        loadKPathSnapshot(snapshotTime, stableRouteState);
+    else if (kPathSnapshotMode == KPathSnapshotMode::Load)
+        nextKPathSnapshotSequence++;
+}
+
 void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterval)
 {
+    if (replayStart > SIMTIME_ZERO && currentInterval == SIMTIME_ZERO) {
+        restoreReplayRoutes();
+        return;
+    }
+    currentInterval += replayStart;
     if(loadFiles){
         bool completedLoad = loadConfiguration(currentInterval);
         if(!completedLoad){
@@ -1086,6 +1121,7 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
         }
     }
     if (endpointToNodeMap != previousEndpointToNodeMap) {
+        lastEndpointChange = simTime();
         endpointAttachmentGeneration++;
         if (kPathCoreSnapshotProfile.empty())
             currentKPathGroups.clear();

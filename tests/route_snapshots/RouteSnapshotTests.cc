@@ -230,6 +230,58 @@ void testNumericTimestampOrdering(const fs::path& directory)
             ordered[2].filename() == "10.bin", "snapshot filenames were sorted lexically instead of numerically");
 }
 
+void testReplayBoundary(const fs::path& directory)
+{
+    testsRun++;
+    const auto corpus = directory / "replay";
+    fs::create_directories(corpus);
+    StableRouteState state(3, 3);
+    state.setRoute(0, 2, 1);
+    auto header = makeBaseHeader(state, 0, 0);
+    writeV3SnapshotAtomic(corpus / "0.bin", header, state.effectiveRecords());
+    state.setSnapshotMetadata(header);
+    StableRouteState boundary;
+    for (int sequence = 1; sequence <= 1700; ++sequence) {
+        StableRouteState next = state;
+        next.setRoute(0, 2, sequence % 2 ? 2 : 1);
+        const int64_t time = sequence * 100000LL + 1;
+        const auto path = corpus / (std::to_string(sequence / 10) + "." +
+            std::to_string(sequence % 10) + "00001.bin");
+        const auto deltaHeader = makeDeltaHeader(state, next, sequence, time);
+        writeV3SnapshotAtomic(path, deltaHeader, diffRoutes(state, next));
+        next.setSnapshotMetadata(deltaHeader);
+        state = next;
+        if (sequence == 1699)
+            boundary = state;
+    }
+    auto restored = readReplayRouteState(corpus, 170000000, 100000, 3);
+    require(restored.timestampMicros == 169900001, "replay selected wrong boundary snapshot");
+    require(restored.filesRead == 1700, "replay did not reconstruct the full prefix");
+    require(restored.state.rawRoutes() == boundary.rawRoutes() &&
+            restored.state.sequence() == boundary.sequence() &&
+            restored.state.baseSequence() == boundary.baseSequence() &&
+            restored.state.baseStateHash() == boundary.baseStateHash() &&
+            restored.state.stateHash() == boundary.stateHash(), "replay lost routes or metadata");
+    const auto following = readSnapshot(corpus / "170.000001.bin");
+    restored.state.applyValidatedDelta(following, restored.state.validateDelta(following));
+    require(restored.state.rawRoutes() == state.rawRoutes() && restored.state.stateHash() == state.stateHash(),
+            "first replay delta did not match continuous playback");
+    auto exact = readReplayRouteState(corpus, 170000001, 100000, 3);
+    require(exact.timestampMicros == 169900001, "boundary event was applied before it was scheduled");
+    expectFailure("short replay corpus", [&] { readReplayRouteState(corpus, 171000000, 100000, 3); });
+    const auto legacy = directory / "replay-v2";
+    fs::create_directories(legacy);
+    writeV2(legacy / "0.bin", {{0, 2, 1}});
+    writeV2(legacy / "0.100001.bin", {{0, 2, 2}});
+    auto v2 = readReplayRouteState(legacy, 200000, 100000, 3);
+    require(v2.state.get(0, 2) == 2 && v2.filesRead == 2 && !v2.state.hasSequenceMetadata(),
+            "legacy replay lost full-snapshot state");
+    fs::rename(legacy / "0.100001.bin", legacy / "0.1.bin");
+    expectFailure("off-phase legacy snapshot", [&] { readReplayRouteState(legacy, 200000, 100000, 3); });
+    fs::remove(corpus / "85.000001.bin");
+    expectFailure("missing historical replay delta", [&] { readReplayRouteState(corpus, 170000000, 100000, 3); });
+}
+
 void testReal286Window(const fs::path& corpus)
 {
     testsRun++;
@@ -279,6 +331,7 @@ int main(int argc, char **argv)
         testMalformedAndTruncatedFiles(temporary);
         testPerSourceInterfaceDirtyResolution();
         testNumericTimestampOrdering(temporary);
+        testReplayBoundary(temporary);
         if (argc == 2)
             testReal286Window(argv[1]);
         else if (argc > 2)

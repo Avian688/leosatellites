@@ -98,3 +98,7 @@ xxx
 /tmp/
 /.computed/
 *.DS_Store
+
+# Captured replay boundary topology
+*.leoreplay
+*.leoreplay.tmp

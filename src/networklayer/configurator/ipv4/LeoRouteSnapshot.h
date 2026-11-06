@@ -118,6 +118,17 @@ class StableRouteState {
                                              FullDecodeStats *stats = nullptr);
 };
 
+// Reconstruct the installed table just before an original-timeline boundary.
+// Historical next hops must not be resolved onto the boundary's live interfaces.
+struct ReplayRouteState {
+    StableRouteState state;
+    int64_t timestampMicros = 0;
+    uint64_t filesRead = 0, bytesRead = 0, recordsDecoded = 0;
+};
+ReplayRouteState readReplayRouteState(const std::filesystem::path& directory,
+                                    int64_t boundaryMicros, int64_t updateMicros,
+                                    int32_t routableNodeCount);
+
 class NextHopInterfaceTable {
   private:
     int32_t trackedSourceCount_ = 0;

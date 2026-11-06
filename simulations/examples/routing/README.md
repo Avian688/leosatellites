@@ -147,3 +147,9 @@ requested duration. Changing only terminal locations/counts or selected pairs
 does not require regenerating primary saves: use `saveRoutes.py --mode multiple
 --start-step 2 --cores 7`. Generate new K-path catalogs for this terminal layout;
 refreshing INIs alone does not produce route data.
+
+## Replay a saved time window
+
+Use `replay.ini` to capture the original topology at 170 s once, then replay
+170–270 s with a local 0–100 s clock. See [replay setup](../../../doc/replay.md)
+for capture, offset parameters and saved-route requirements.

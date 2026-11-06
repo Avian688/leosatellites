@@ -482,6 +482,44 @@ std::vector<std::filesystem::path> listSnapshotFilesNumeric(const std::filesyste
     return result;
 }
 
+ReplayRouteState readReplayRouteState(const std::filesystem::path& directory,
+                                    int64_t boundaryMicros, int64_t updateMicros,
+                                    int32_t routableNodeCount)
+{
+    if (boundaryMicros <= 0 || updateMicros <= 0)
+        throw std::runtime_error("Replay boundary and update interval must be positive");
+    ReplayRouteState result;
+    for (const auto& path : listSnapshotFilesNumeric(directory)) {
+        const int64_t timestamp = timestampMicrosFromPath(path);
+        if (timestamp >= boundaryMicros)
+            break;
+        const auto snapshot = readSnapshot(path);
+        if (result.filesRead == 0) {
+            if (timestamp != 0)
+                throw std::runtime_error("Replay requires the original primary base at zero");
+            result.state = StableRouteState::fromFullSnapshot(snapshot, routableNodeCount, routableNodeCount);
+        }
+        else {
+            const int64_t expected = result.timestampMicros == 0 ? updateMicros + 1 : result.timestampMicros + updateMicros;
+            if (timestamp != expected)
+                throw std::runtime_error("Missing or off-phase primary snapshot before replay boundary");
+            if (snapshot.format == SnapshotFormat::V2Full)
+                result.state = StableRouteState::fromFullSnapshot(snapshot, routableNodeCount, routableNodeCount);
+            else {
+                const auto preview = result.state.validateDelta(snapshot);
+                result.state.applyValidatedDelta(snapshot, preview);
+            }
+        }
+        result.filesRead++;
+        result.bytesRead += snapshot.bytesRead;
+        result.recordsDecoded += snapshot.records.size();
+        result.timestampMicros = timestamp;
+    }
+    if (result.filesRead == 0 || boundaryMicros - result.timestampMicros > updateMicros)
+        throw std::runtime_error("Primary snapshots do not reach replay boundary");
+    return result;
+}
+
 ParsedSnapshot readSnapshot(const std::filesystem::path& path)
 {
     ParsedSnapshot result;

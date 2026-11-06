@@ -64,6 +64,8 @@ protected:
         int userTerminalIndex = -1;
         int targetSatelliteIndex = -1;
         simtime_t reconnectTime = SIMTIME_ZERO;
+        int oldSatelliteIndex = -1;
+        simtime_t startTime = SIMTIME_ZERO;
     };
 
     struct TopocentricSample {
@@ -75,6 +77,12 @@ protected:
     LeoIpv4NetworkConfigurator* configurator;
     UserTerminalHandoverOracle *handoverOracle;
 
+    cMessage *captureReplayTimer = nullptr;
+    simtime_t replayStart = SIMTIME_ZERO;
+    simtime_t restoredNextUpdate = SIMTIME_ZERO;
+    std::string replaySignature() const;
+    void captureReplayState();
+    void restoreReplayState();
     cMessage *startManagerNode;
     cMessage *updateTimer;
     cMessage *userTerminalHandoverTimer;

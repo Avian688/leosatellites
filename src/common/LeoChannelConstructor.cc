@@ -13,6 +13,9 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
 #include <fstream> //check if needed
 #include <algorithm>
 #include <cmath>
@@ -25,6 +28,8 @@
 #include <inet/common/lifecycle/ModuleOperations.h>
 
 #include "LeoChannelConstructor.h"
+#include "LeoReplayCheckpoint.h"
+#include "../mobility/NoradA.h"
 #include "LeoQueueDefaults.h"
 #include "UserTerminalHandoverOracle.h"
 
@@ -47,6 +52,7 @@ static bool isUserTerminalTypeName(const std::string& typeName)
 }
 
 LeoChannelConstructor::~LeoChannelConstructor() {
+    cancelAndDelete(captureReplayTimer);
     cancelAndDelete(startManagerNode);
     cancelAndDelete(updateTimer);
     cancelAndDelete(userTerminalHandoverTimer);
@@ -125,6 +131,23 @@ void LeoChannelConstructor::initialize(int stage)
         if (handoverOracle != nullptr)
             handoverOracle->setUserTerminals(userTerminalModules);
 
+        replayStart = par("replayStart");
+        const simtime_t captureAt = par("captureReplayAt");
+        if (replayStart < SIMTIME_ZERO || (replayStart > SIMTIME_ZERO && captureAt >= SIMTIME_ZERO))
+            throw cRuntimeError("Use a non-negative replayStart; capture is only allowed on the original zero-offset run");
+        if ((replayStart > SIMTIME_ZERO || captureAt >= SIMTIME_ZERO) && std::string(par("replayStateFile").stringValue()).empty())
+            throw cRuntimeError("Replay/capture requires replayStateFile");
+        if (captureAt >= SIMTIME_ZERO) {
+            if (captureAt == SIMTIME_ZERO)
+                throw cRuntimeError("captureReplayAt must be positive (zero needs no checkpoint)");
+            captureReplayTimer = new cMessage("captureReplayState");
+            // Capture the left boundary, before mobility and topology events at that time.
+            captureReplayTimer->setSchedulingPriority(-32768);
+            scheduleAt(captureAt, captureReplayTimer);
+        }
+        if (replayStart > SIMTIME_ZERO)
+            startManagerNode->setSchedulingPriority(-32767);
+
         // Start manager node at simulation time 0
         scheduleAt(0, startManagerNode);
     }
@@ -133,7 +156,10 @@ void LeoChannelConstructor::initialize(int stage)
 //TODO move the message handling to configurator?
 void LeoChannelConstructor::handleMessage(cMessage *msg)
 {
-    if(msg == updateTimer){
+    if (msg == captureReplayTimer) {
+        captureReplayState();
+    }
+    else if(msg == updateTimer){
         setUpGSLinks();
         const bool userTerminalLinksChanged = refreshUserTerminalLinks(false);
         addPPPInterfaces();
@@ -158,13 +184,22 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
     }
     else if(msg == startManagerNode){
         setUpSimulation();
-        setUpGSLinks();
-        const bool userTerminalLinksChanged = refreshUserTerminalLinks(true);
+        bool userTerminalLinksChanged = false;
+        if (replayStart > SIMTIME_ZERO) {
+            restoreReplayState();
+            userTerminalLinksChanged = true;
+        }
+        else {
+            setUpGSLinks();
+            userTerminalLinksChanged = refreshUserTerminalLinks(true);
+        }
 
         setUpInterfaces();
         if (userTerminalLinksChanged)
             finalizeUserTerminalLinks();
-        updateChannels();
+        // Restored delays are the actual installed boundary delays, not a fresh sample.
+        if (replayStart == SIMTIME_ZERO)
+            updateChannels();
 
         if(enableInterSatelliteLinks){
             configurator->establishInitialISLs();
@@ -226,11 +261,132 @@ void LeoChannelConstructor::cacheNetworkModules()
     }
 }
 
+// Checkpoints contain topology state only: no packets, queues, or transport state.
+std::string LeoChannelConstructor::replaySignature() const
+{
+    std::ostringstream out;
+    out << std::setprecision(17) << numOfSats << ' ' << numOfGS << ' ' << numOfClients << ' '
+        << numOfUserTerminals << ' ' << enableInterSatelliteLinks << ' ' << updateInterval << ' '
+        << userTerminalUpdateInterval << ' ' << userTerminalSampleInterval << ' '
+        << userTerminalHandoverDowntime;
+    for (auto *norad : satelliteNoradModules) {
+        out << ' ' << norad->getNedTypeName();
+        for (int i = 0; i < norad->getNumParams(); ++i)
+            out << ' ' << norad->par(i).str();
+    }
+    for (const auto& modules : {groundStationModules, userTerminalModules})
+        for (auto *module : modules) {
+            auto *mobility = check_and_cast<GroundStationMobility *>(module->getSubmodule("mobility"));
+            out << ' ' << mobility->getLUTPositionY() << ' ' << mobility->getLUTPositionX();
+        }
+    for (const auto& modules : {clientModules, serverModules})
+        for (auto *module : modules)
+            out << ' ' << module->par("connectModule").str();
+    return out.str();
+}
+
+void LeoChannelConstructor::captureReplayState()
+{
+    const std::filesystem::path path(par("replayStateFile").stringValue());
+    if (std::filesystem::exists(path))
+        throw cRuntimeError("Replay checkpoint already exists: %s (choose a new file to recapture)", path.string().c_str());
+    if (!updateTimer->isScheduled())
+        throw cRuntimeError("Cannot capture replay state before topology initialization");
+    if (!path.parent_path().empty())
+        std::filesystem::create_directories(path.parent_path());
+    const auto temporary = path.string() + ".tmp";
+    leoReplay::Checkpoint state;
+    state.scale = SimTime::getScaleExp();
+    state.boundary = simTime().raw();
+    state.nextUpdate = updateTimer->getArrivalTime().raw();
+    state.nextAttachmentCheck = nextUserTerminalUpdate.raw();
+    state.lastAttachmentChange = configurator->getLastEndpointChangeTime().raw();
+    state.signature = replaySignature();
+    for (const auto& link : fixedTimedLinks)
+        state.fixedDelays.push_back(link.forwardChannel->getDelay().raw());
+    std::vector<uint64_t> keys;
+    for (const auto& entry : activeGroundStationLinks)
+        keys.push_back(entry.first);
+    std::sort(keys.begin(), keys.end());
+    for (auto key : keys) {
+        const auto& link = activeGroundStationLinks.at(key).linkRecord;
+        state.groundLinks.push_back({link.groundStationIndex, link.satelliteIndex, link.forwardChannel->getDelay().raw()});
+    }
+    for (int i = 0; i < numOfUserTerminals; ++i) {
+        leoReplay::Terminal terminal;
+        auto active = activeUserTerminalLinks.find(i);
+        auto pending = pendingUserTerminalHandovers.find(i);
+        if (active != activeUserTerminalLinks.end()) {
+            terminal.satellite = active->second.satelliteIndex;
+            terminal.delay = active->second.forwardChannel->getDelay().raw();
+        }
+        if (pending != pendingUserTerminalHandovers.end()) {
+            terminal.target = pending->second.targetSatelliteIndex;
+            terminal.old = pending->second.oldSatelliteIndex;
+            terminal.start = pending->second.startTime.raw();
+            terminal.reconnect = pending->second.reconnectTime.raw();
+        }
+        state.terminals.push_back(terminal);
+    }
+    std::ofstream out(temporary);
+    leoReplay::writeCheckpoint(out, state);
+    out.flush();
+    if (!out)
+        throw cRuntimeError("Failed to write replay checkpoint %s", temporary.c_str());
+    out.close();
+    std::filesystem::rename(temporary, path);
+    EV_INFO << "Captured replay topology at " << simTime() << " to " << path << endl;
+}
+
+void LeoChannelConstructor::restoreReplayState()
+{
+    std::ifstream in(par("replayStateFile").stringValue());
+    const auto state = leoReplay::readCheckpoint(in, SimTime::getScaleExp(), replayStart.raw(),
+        updateInterval.raw(), userTerminalUpdateInterval.raw(), replaySignature(), fixedTimedLinks.size(),
+        numOfSats, numOfGS, numOfUserTerminals);
+    configurator->setReplayLastEndpointChangeTime(SimTime::fromRaw(state.lastAttachmentChange));
+    restoredNextUpdate = SimTime::fromRaw(state.nextUpdate) - replayStart;
+    nextUserTerminalUpdate = SimTime::fromRaw(state.nextAttachmentCheck) - replayStart;
+    auto setDelay = [](cDatarateChannel *forward, cDatarateChannel *reverse, simtime_t delay) {
+        if (delay < SIMTIME_ZERO)
+            throw cRuntimeError("Negative channel delay in replay checkpoint");
+        forward->setDelay(delay.dbl());
+        reverse->setDelay(delay.dbl());
+    };
+    for (size_t i = 0; i < state.fixedDelays.size(); ++i)
+        setDelay(fixedTimedLinks[i].forwardChannel, fixedTimedLinks[i].reverseChannel, SimTime::fromRaw(state.fixedDelays[i]));
+    configurator->clearGroundStationLinks();
+    for (const auto& link : state.groundLinks) {
+        createGroundStationLink(link.ground, link.satellite);
+        auto& record = activeGroundStationLinks.at(getGroundStationLinkKey(link.ground, link.satellite)).linkRecord;
+        setDelay(record.forwardChannel, record.reverseChannel, SimTime::fromRaw(link.delay));
+        configurator->addGSLinktoTopologyGraph(numOfSats + link.ground, link.satellite, SimTime::fromRaw(link.delay).dbl() * 1000);
+    }
+    for (int i = 0; i < numOfUserTerminals; ++i) {
+        const auto& terminal = state.terminals[i];
+        if (terminal.satellite >= 0) {
+            createUserTerminalLink(i, terminal.satellite);
+            const auto& link = activeUserTerminalLinks.at(i);
+            setDelay(link.forwardChannel, link.reverseChannel, SimTime::fromRaw(terminal.delay));
+        }
+        if (terminal.target >= 0) {
+            pendingUserTerminalHandovers[i] = {i, terminal.target, SimTime::fromRaw(terminal.reconnect) - replayStart, terminal.old, SimTime::fromRaw(terminal.start) - replayStart};
+            if (handoverOracle)
+                handoverOracle->markHardHandoverStarted(i, terminal.old, terminal.target, SimTime::fromRaw(terminal.start) - replayStart, SimTime::fromRaw(terminal.reconnect) - replayStart);
+        }
+    }
+    publishNextUserTerminalHandoverTime();
+    scheduleUserTerminalHandoverTimer();
+}
+
 void LeoChannelConstructor::scheduleUpdate(bool simStart)
 {
     cancelEvent(updateTimer);
     simtime_t nextUpdate;
-    if(!simStart){
+    if (simStart && replayStart > SIMTIME_ZERO) {
+        nextUpdate = restoredNextUpdate;
+    }
+    else if(!simStart){
         nextUpdate = simTime() + updateInterval;
     }
     else{
@@ -271,6 +427,18 @@ void LeoChannelConstructor::setUpSimulation()
     if (!satelliteMobilities.empty() && satelliteMobilities.front() != nullptr) {
         updateInterval = satelliteMobilities.front()->par("updateInterval").doubleValue();
     }
+
+    const simtime_t boundary = replayStart > SIMTIME_ZERO ? replayStart : SimTime(par("captureReplayAt"));
+    if (boundary > SIMTIME_ZERO && (updateInterval <= SIMTIME_ZERO || boundary.raw() % updateInterval.raw() != 0))
+        throw cRuntimeError("Replay boundary must be aligned to the satellite mobility updateInterval");
+    for (auto *mobility : satelliteMobilities)
+        if (boundary > SIMTIME_ZERO && mobility && SimTime(mobility->par("updateInterval")) != updateInterval)
+            throw cRuntimeError("Satellite mobility update intervals must match");
+
+    if (boundary > SIMTIME_ZERO)
+        for (auto *norad : satelliteNoradModules)
+            if (!dynamic_cast<NoradA *>(norad))
+                throw cRuntimeError("Replay capture/restore requires NoradA satellites");
 
     if(!enableInterSatelliteLinks){
         return;
@@ -536,6 +704,8 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
     auto schedulePendingHandover = [&](int userTerminalIndex, int oldSatelliteIndex, int targetSatelliteIndex) {
         PendingUserTerminalHandover pendingHandover;
         pendingHandover.userTerminalIndex = userTerminalIndex;
+        pendingHandover.oldSatelliteIndex = oldSatelliteIndex;
+        pendingHandover.startTime = simTime();
         pendingHandover.targetSatelliteIndex = targetSatelliteIndex;
         pendingHandover.reconnectTime = simTime() + computeUserTerminalHandoverDowntime(userTerminalIndex, oldSatelliteIndex, targetSatelliteIndex);
         pendingUserTerminalHandovers[userTerminalIndex] = pendingHandover;

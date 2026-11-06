@@ -53,6 +53,7 @@ private:
     int planes;
     int satPerPlane;
 
+    simtime_t replayStart = SIMTIME_ZERO;
     cOrbitA* orbit;
 };
 

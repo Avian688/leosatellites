@@ -35,7 +35,7 @@ void NoradA::finish()
  */
 void NoradA::updateTime(const simtime_t& targetTime)
 {
-    orbit->getPosition((gap + targetTime.dbl()) / 60, &eci);
+    orbit->getPosition((gap + (targetTime + replayStart).dbl()) / 60, &eci);
     geoCoord = eci.toGeo();
 }
 
@@ -44,6 +44,11 @@ void NoradA::initializeMobility(const simtime_t& targetTime)
 {
     //Instead of reading a TLE file and obtaining the Keplerian elements, the parameters are obtained
     //from the default NED file parameters or the parameters specified within the INI file of the simulation.
+    cModule *constructor = getParentModule()->getParentModule()->getSubmodule("channelConstructor");
+    if (constructor && constructor->hasPar("replayStart"))
+        replayStart = constructor->par("replayStart");
+    if (replayStart < SIMTIME_ZERO)
+        throw cRuntimeError("replayStart must be non-negative");
     int satIndex = par("satIndex");
     satelliteIndex = satIndex;
     std::string satNameA = par("satName");
