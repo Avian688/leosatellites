@@ -83,15 +83,16 @@ pair group and a one-based path rank:
 Pair groups follow the configurator's canonical sorted `kPathEndpointPairs`
 order. The app encodes the group and rank in the ordinary 16-bit ICMP identifier;
 this is experiment control metadata, not extra simulated wire overhead. `LeoIpv4`
-uses the selected snapshot rank at every hop, and the echo reply uses that rank
-in reverse. Each hop consults the currently loaded catalog, so a path that changes
-while a packet is in flight may be dropped. Unavailable ranks and brief catalog
-gaps during a hard handover are also dropped instead of falling back to the
-primary route.
+pins the current node sequence when the packet enters the network. Each hop
+resolves the pinned next node against the live interfaces. New packets use the
+latest catalog, and the echo reply independently selects the same rank in
+reverse. Packets can finish on the old route while its remaining links are
+available. A missing live link, an unavailable rank, or a catalog gap during a
+hard handover still results in a drop.
 
 The app emits the measured `rtt` plus `kPathAvailable`, `kPathExpectedRtt`,
-`kPathCoreLinkCount`, and `kPathCatalogSize`. Unmarked ICMP and all other traffic
-remain on normal primary routing.
+`kPathCoreLinkCount`, and `kPathCatalogSize`. Traffic outside the configured
+K-path ICMP and TCP selections uses normal primary routing.
 
 ## Corpus Layout
 
@@ -228,9 +229,8 @@ ordered group without recomputation. This compact representation relies on the
 current LEO model's bidirectional, symmetric-delay links; a future directed-link
 model must store directions separately.
 
-The query returns a value containing the node sequences, so a transport should
-fetch it once per catalog generation and retain it for its subflows rather than
-calling the API for every packet. The ping-specific identifier and per-hop lookup
-are deliberately measurement instrumentation. Future transport integration still
-needs a general packet path identifier, source routing, segment routing, or
-per-flow forwarding entries.
+The query returns a value containing the node sequences, so a consumer can
+fetch it once per catalog generation. The configured K-path TCP port mapping
+uses the same packet pinning as the ICMP probes. The pin is simulator metadata
+on the IPv4 header and shares the immutable saved node sequence with other
+packets from that catalog.

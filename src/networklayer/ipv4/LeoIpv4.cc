@@ -13,6 +13,7 @@
 // along with this program.  If not, see http://www.gnu.org/licenses/.
 // 
 #include "LeoIpv4.h"
+#include "LeoKPathRouteTag.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -20,6 +21,7 @@
 
 #include <inet/common/ModuleAccess.h>
 #include <inet/networklayer/common/IpProtocolId_m.h>
+#include <inet/networklayer/common/L3Tools.h>
 #include <inet/networklayer/ipv4/IcmpHeader.h>
 #include <inet/transportlayer/tcp_common/TcpHeader.h>
 #include "../../applications/pingapp/KShortestPathPingIdentifier.h"
@@ -52,6 +54,7 @@ static bool getKPathPingSelection(const Packet *packet, const Ptr<const Ipv4Head
 }
 
 Define_Module(LeoIpv4);
+Register_Class(LeoKPathRouteTag);
 
 LeoIpv4::LeoIpv4()
 {
@@ -228,18 +231,38 @@ void LeoIpv4::routeUnicastPacket(Packet *packet)
     //}
     //else {
         // use Ipv4 routing (lookup in routing table)
-    int modId = configurator->getModuleIdFromIpAddress(destAddr.getInt()); //TODO check if IP address is end point, if is, get ground station IP
+    const auto pinned = ipv4Header->findTag<LeoKPathRouteTag>();
+    int modId = pinned ? pinned->destinationNodeId :
+        configurator->getModuleIdFromIpAddress(destAddr.getInt());
 
     const int currentNodeType = configurator->getNodeTypeCode(nodeId);
     const int destinationNodeType = configurator->getNodeTypeCode(modId);
     int pathGroup = -1;
     int pathIndex = -1;
-    const bool useKPath = getKPathTcpSelection(packet, ipv4Header, modId, pathGroup, pathIndex) ||
+    const bool useKPath = pinned || getKPathTcpSelection(packet, ipv4Header, modId, pathGroup, pathIndex) ||
         (configurator->isKPathPingRoutingEnabled() &&
          getKPathPingSelection(packet, ipv4Header, pathGroup, pathIndex));
-    int interfaceID = useKPath ?
-        configurator->getKPathPingNextHopInterface(nodeId, modId, pathGroup, pathIndex) :
-        ((modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size())) ? primaryNextHopInterfaces[modId] : 0);
+    int interfaceID = 0;
+    if (useKPath) {
+        if (pinned && ipv4Header->getProtocolId() == IP_PROT_TCP &&
+                (ipv4Header->getFragmentOffset() != 0 || ipv4Header->getMoreFragments()))
+            throw cRuntimeError("K-path TCP routing requires unfragmented packets; reduce TCP MSS");
+        // Transit packets must follow the route chosen at ingress, even after a catalog update.
+        auto nodes = pinned ? pinned->nodes : nullptr;
+        if (!pinned && fromIE == nullptr)
+            nodes = configurator->pinKPath(nodeId, modId, pathGroup, pathIndex);
+        if (nodes)
+            interfaceID = configurator->getPinnedKPathNextHopInterface(nodeId, modId, *nodes);
+        if (interfaceID > 0 && !pinned) {
+            auto header = removeNetworkProtocolHeader<Ipv4Header>(packet);
+            auto tag = header->addTag<LeoKPathRouteTag>();
+            tag->nodes = std::move(nodes);
+            tag->destinationNodeId = modId;
+            insertNetworkProtocolHeader(packet, Protocol::ipv4, header);
+        }
+    }
+    else if (modId >= 0 && modId < static_cast<int>(primaryNextHopInterfaces.size()))
+        interfaceID = primaryNextHopInterfaces[modId];
     int attachedNodeId = -1;
     int routeToAttachedNodeInterfaceId = -1;
     int endpointAttachmentInterfaceId = -1;

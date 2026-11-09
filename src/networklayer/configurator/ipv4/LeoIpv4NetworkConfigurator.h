@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <igraph.h>
+#include <memory>
 #include <queue>
 #include <string>
 #include <tuple>
@@ -118,7 +119,8 @@ protected:
     std::string kPathEndpointPairsSpec;
     bool kPathPingRouting = false;
     std::vector<std::pair<int32_t, int32_t>> configuredKPathEndpointPairs;
-    std::unordered_map<uint64_t, leoRouting::KShortestPathGroup> currentKPathGroups;
+    using KPathCatalog = std::unordered_map<uint64_t, leoRouting::KShortestPathGroup>;
+    std::shared_ptr<const KPathCatalog> currentKPathGroups = std::make_shared<const KPathCatalog>();
     int32_t nextKPathSnapshotSequence = 0;
     leoRouting::KShortestPathFinder currentPathTopology;
     std::uint64_t pathTopologyGeneration = 0;
@@ -204,8 +206,10 @@ public:
         leoRouting::KShortestPathGroup& result) const;
     virtual int getKPathPingPeerNodeId(int pathGroup, int endpointNodeId) const;
     int getKPathPingGroupCount() const { return static_cast<int>(configuredKPathEndpointPairs.size()); }
-    virtual int getKPathPingNextHopInterface(
-        int currentNodeId, int destinationNodeId, int pathGroup, int pathIndex);
+    std::shared_ptr<const std::vector<int32_t>> pinKPath(
+        int sourceNodeId, int destinationNodeId, int pathGroup, int pathIndex) const;
+    int getPinnedKPathNextHopInterface(int currentNodeId, int destinationNodeId,
+                                     const std::vector<int32_t>& nodes);
     bool isKPathPingRoutingEnabled() const { return kPathPingRouting; }
 };
 }
