@@ -2,7 +2,7 @@
 # OMNeT++/OMNEST Makefile for $(LIB_PREFIX)leosatellites
 #
 # This file was generated with the command:
-#  opp_makemake -f --make-so --deep -o leosatellites
+#  opp_makemake --make-so -f --deep -o leosatellites -KINET4_5_PROJ=../../inet4.5 -KOS3_PROJ=../../os3 -DINET_IMPORT -I$$\(INET4_5_PROJ\)/src -I/opt/homebrew/opt/curl/include/curl -L/opt/homebrew/lib -L$$\(INET4_5_PROJ\)/src -L$$\(OS3_PROJ\)/src -lINET$$\(D\) -los3$$\(D\)
 #
 
 # Name of target to be created (-o option)
@@ -12,13 +12,13 @@ TARGET = $(TARGET_NAME)$(SHARED_LIB_SUFFIX)
 TARGET_FILES = $(TARGET_DIR)/$(TARGET)
 
 # C++ include paths (with -I)
-INCLUDE_PATH =
+INCLUDE_PATH = -I$(INET4_5_PROJ)/src -I/opt/homebrew/opt/curl/include/curl
 
 # Additional object and library files to link with
 EXTRA_OBJS =
 
 # Additional libraries (-L, -l options)
-LIBS =
+LIBS = $(LDFLAG_LIBPATH)/opt/homebrew/lib $(LDFLAG_LIBPATH)$(INET4_5_PROJ)/src $(LDFLAG_LIBPATH)$(OS3_PROJ)/src  -lINET$(D) -los3$(D)
 
 # Output directory
 PROJECT_OUTPUT_DIR = ../out
@@ -59,6 +59,10 @@ MSGFILES =
 # SM files
 SMFILES =
 
+# Other makefile variables (-K)
+INET4_5_PROJ=../../inet4.5
+OS3_PROJ=../../os3
+
 #------------------------------------------------------------------------------
 
 # Pull in OMNeT++ configuration (Makefile.inc)
@@ -77,8 +81,11 @@ include $(CONFIGFILE)
 
 # Simulation kernel and user interface libraries
 OMNETPP_LIBS = -loppenvir$D $(KERNEL_LIBS) $(SYS_LIBS)
+ifneq ($(PLATFORM),win32)
+LIBS += -Wl,-rpath,$(abspath /opt/homebrew/lib) -Wl,-rpath,$(abspath $(INET4_5_PROJ)/src) -Wl,-rpath,$(abspath $(OS3_PROJ)/src)
+endif
 
-COPTS = $(CFLAGS) $(IMPORT_DEFINES)  $(INCLUDE_PATH) -I$(OMNETPP_INCL_DIR)
+COPTS = $(CFLAGS) $(IMPORT_DEFINES) -DINET_IMPORT $(INCLUDE_PATH) -I$(OMNETPP_INCL_DIR)
 MSGCOPTS = $(INCLUDE_PATH)
 SMCOPTS =
 
