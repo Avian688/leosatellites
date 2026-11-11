@@ -185,9 +185,12 @@ std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotDirectory() co
     return getRoutingDirectory() / "kpaths" / kPathSnapshotSet / profile;
 }
 
-std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotPath(simtime_t interval) const
+std::filesystem::path LeoIpv4NetworkConfigurator::getKPathSnapshotPath(simtime_t interval, bool reconnect) const
 {
-    return getKPathSnapshotDirectory() / (interval.str() + ".bin");
+    auto directory = getKPathSnapshotDirectory();
+    if (reconnect)
+        directory /= "reconnects";
+    return directory / (interval.str() + ".bin");
 }
 
 void LeoIpv4NetworkConfigurator::initializeKPathSnapshotConfiguration()
@@ -441,13 +444,17 @@ void LeoIpv4NetworkConfigurator::restoreReplayRoutes()
         static_cast<int>(restored.filesRead - 1);
     applyFullRouteState(std::move(restored.state));
     const simtime_t snapshotTime = SimTime(restored.timestampMicros, SIMTIME_US);
-    // A continuous run clears its endpoint catalog when attachments change
-    // between snapshots. Preserve that gap until the next regular snapshot.
-    if (kPathSnapshotMode == KPathSnapshotMode::Load &&
-        (!kPathCoreSnapshotProfile.empty() || replayLastEndpointChange <= snapshotTime))
-        loadKPathSnapshot(snapshotTime, stableRouteState);
-    else if (kPathSnapshotMode == KPathSnapshotMode::Load)
-        nextKPathSnapshotSequence++;
+    if (kPathSnapshotMode == KPathSnapshotMode::Load) {
+        if (kPathCoreSnapshotProfile.empty() && replayLastEndpointChange > snapshotTime) {
+            // The reconnect catalog records the complete endpoint state on the
+            // same primary route sequence as the preceding topology tick.
+            nextKPathSnapshotSequence++;
+            loadKPathSnapshot(replayLastEndpointChange, stableRouteState, true);
+        }
+        else {
+            loadKPathSnapshot(snapshotTime, stableRouteState);
+        }
+    }
 }
 
 void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterval)
@@ -476,6 +483,20 @@ void LeoIpv4NetworkConfigurator::updateForwardingStates(simtime_t currentInterva
             generateKPathSnapshot(currentInterval, generatedRouteState);
     }
 
+}
+
+void LeoIpv4NetworkConfigurator::refreshKPathsAfterReconnect()
+{
+    if (lastEndpointChange != simTime() || !kPathCoreSnapshotProfile.empty())
+        return;
+
+    // Core links and their weights stay at the preceding topology tick.
+    // Reconnect snapshots refresh only terminal routes on that primary state.
+    const simtime_t originalTime = simTime() + replayStart;
+    if (kPathSnapshotMode == KPathSnapshotMode::Generate)
+        generateKPathSnapshot(originalTime, loadFiles ? stableRouteState : generatedRouteState, true);
+    else if (kPathSnapshotMode == KPathSnapshotMode::Load)
+        loadKPathSnapshot(originalTime, stableRouteState, true);
 }
 
 void LeoIpv4NetworkConfigurator::clearGroundStationLinks()
@@ -1123,10 +1144,23 @@ void LeoIpv4NetworkConfigurator::setGroundStationsWithEndpoints()
     if (endpointToNodeMap != previousEndpointToNodeMap) {
         lastEndpointChange = simTime();
         endpointAttachmentGeneration++;
-        if (kPathCoreSnapshotProfile.empty())
-            currentKPathGroups = std::make_shared<const KPathCatalog>();
-        else
-            extendSavedCoreKPathGroups();
+        auto attachment = [&](int endpoint) {
+            auto it = endpointToNodeMap.find(endpoint);
+            return it == endpointToNodeMap.end() ? -1 : it->second;
+        };
+        auto catalog = *currentKPathGroups;
+        for (auto it = catalog.begin(); it != catalog.end();) {
+            const auto& group = it->second;
+            if (group.coreSourceNodeId != attachment(group.sourceNodeId) ||
+                group.coreDestinationNodeId != attachment(group.destinationNodeId))
+                it = catalog.erase(it);
+            else
+                ++it;
+        }
+        if (catalog.size() != currentKPathGroups->size())
+            currentKPathGroups = std::make_shared<const KPathCatalog>(std::move(catalog));
+        if (!kPathCoreSnapshotProfile.empty())
+            extendSavedCoreKPathGroups(true);
     }
 }
 
@@ -1222,20 +1256,25 @@ leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::computeCanonicalKShor
 }
 
 void LeoIpv4NetworkConfigurator::generateKPathSnapshot(
-    simtime_t interval, const leoRouting::StableRouteState& routeState)
+    simtime_t interval, const leoRouting::StableRouteState& routeState, bool reconnect)
 {
     if (!currentPathTopology.isInitialized())
         throw cRuntimeError("Cannot generate endpoint K paths before the weighted topology is initialized");
-    const int32_t sequence = routeState.hasSequenceMetadata() ?
-        routeState.sequence() : nextKPathSnapshotSequence;
-    if (sequence != nextKPathSnapshotSequence)
+    const int32_t expectedSequence = nextKPathSnapshotSequence - (reconnect ? 1 : 0);
+    const int32_t sequence = routeState.hasSequenceMetadata() ? routeState.sequence() : expectedSequence;
+    if (sequence != expectedSequence)
         throw cRuntimeError("Endpoint K-path generation expected sequence %d but primary route state has %d",
-                            nextKPathSnapshotSequence, sequence);
+                            expectedSequence, sequence);
 
     std::vector<leoRouting::KShortestPathGroup> groups;
     groups.reserve(configuredKPathEndpointPairs.size());
-    for (const auto& [source, destination] : configuredKPathEndpointPairs)
-        groups.push_back(computeCanonicalKShortestPathGroup(source, destination));
+    for (const auto& [source, destination] : configuredKPathEndpointPairs) {
+        const auto saved = currentKPathGroups->find(leoRouting::kPathEndpointPairKey(source, destination));
+        if (reconnect && saved != currentKPathGroups->end())
+            groups.push_back(saved->second);
+        else
+            groups.push_back(computeCanonicalKShortestPathGroup(source, destination));
+    }
 
     leoRouting::KPathSnapshotHeader header;
     header.sequence = sequence;
@@ -1250,7 +1289,7 @@ void LeoIpv4NetworkConfigurator::generateKPathSnapshot(
     header.routeStateHash = routeState.stateHash();
     header.endpointStateHash = leoRouting::computeKPathEndpointStateHash(
         getConfiguredKPathEndpointStates());
-    leoRouting::writeKPathSnapshotAtomic(getKPathSnapshotPath(interval), header, groups,
+    leoRouting::writeKPathSnapshotAtomic(getKPathSnapshotPath(interval, reconnect), header, groups,
                                          allowRouteSnapshotOverwrite);
 
     KPathCatalog candidateCatalog;
@@ -1259,13 +1298,17 @@ void LeoIpv4NetworkConfigurator::generateKPathSnapshot(
         candidateCatalog.emplace(leoRouting::kPathEndpointPairKey(group.sourceNodeId, group.destinationNodeId),
                                  std::move(group));
     currentKPathGroups = std::make_shared<const KPathCatalog>(std::move(candidateCatalog));
-    nextKPathSnapshotSequence++;
+    if (!reconnect)
+        nextKPathSnapshotSequence++;
 }
 
-void LeoIpv4NetworkConfigurator::extendSavedCoreKPathGroups()
+void LeoIpv4NetworkConfigurator::extendSavedCoreKPathGroups(bool onlyMissing)
 {
-    KPathCatalog candidateCatalog;
+    KPathCatalog candidateCatalog = onlyMissing ? *currentKPathGroups : KPathCatalog{};
     for (const auto& [source, destination] : configuredKPathEndpointPairs) {
+        const auto pairKey = leoRouting::kPathEndpointPairKey(source, destination);
+        if (candidateCatalog.count(pairKey))
+            continue;
         const auto src = endpointToNodeMap.find(source);
         const auto dst = endpointToNodeMap.find(destination);
         if (src == endpointToNodeMap.end() || dst == endpointToNodeMap.end())
@@ -1282,15 +1325,15 @@ void LeoIpv4NetworkConfigurator::extendSavedCoreKPathGroups()
             getEndpointAccessOneWayDelayMs(destination), numOfKPaths);
         group.topologyGeneration = pathTopologyGeneration;
         group.endpointAttachmentGeneration = endpointAttachmentGeneration;
-        candidateCatalog.emplace(leoRouting::kPathEndpointPairKey(source, destination), std::move(group));
+        candidateCatalog.emplace(pairKey, std::move(group));
     }
     currentKPathGroups = std::make_shared<const KPathCatalog>(std::move(candidateCatalog));
 }
 
 void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
-    simtime_t interval, const leoRouting::StableRouteState& routeState)
+    simtime_t interval, const leoRouting::StableRouteState& routeState, bool reconnect)
 {
-    const std::filesystem::path path = getKPathSnapshotPath(interval);
+    const std::filesystem::path path = getKPathSnapshotPath(interval, reconnect);
     leoRouting::KPathSnapshot snapshot;
     try {
         snapshot = leoRouting::readKPathSnapshot(path);
@@ -1301,7 +1344,7 @@ void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
     }
 
     const int32_t expectedSequence = routeState.hasSequenceMetadata() ?
-        routeState.sequence() : nextKPathSnapshotSequence;
+        routeState.sequence() : nextKPathSnapshotSequence - (reconnect ? 1 : 0);
     const int32_t routableNodeCount = std::min(static_cast<int32_t>(numOfSats + numOfGS),
                                                static_cast<int32_t>(nodeModules.size()));
     if (snapshot.header.sequence != expectedSequence)
@@ -1371,8 +1414,16 @@ void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
         }
     }
 
-    pathTopologyGeneration++;
+    if (!reconnect)
+        pathTopologyGeneration++;
     for (auto& [pairKey, group] : candidateCatalog) {
+        if (reconnect) {
+            auto existing = currentKPathGroups->find(pairKey);
+            if (existing != currentKPathGroups->end()) {
+                group = existing->second;
+                continue;
+            }
+        }
         group.topologyGeneration = pathTopologyGeneration;
         group.endpointAttachmentGeneration = endpointAttachmentGeneration;
         kPathGroupsLoaded++;
@@ -1383,7 +1434,8 @@ void LeoIpv4NetworkConfigurator::loadKPathSnapshot(
     kPathSnapshotFilesRead++;
     kPathSnapshotBytesRead += snapshot.bytesRead;
     currentKPathGroups = std::make_shared<const KPathCatalog>(std::move(candidateCatalog));
-    nextKPathSnapshotSequence++;
+    if (!reconnect)
+        nextKPathSnapshotSequence++;
 }
 
 leoRouting::KShortestPathGroup LeoIpv4NetworkConfigurator::getKShortestPathGroup(

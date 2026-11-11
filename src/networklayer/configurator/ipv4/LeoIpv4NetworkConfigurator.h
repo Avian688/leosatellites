@@ -128,7 +128,7 @@ protected:
 
     std::filesystem::path getRoutingDirectory() const;
     std::filesystem::path getKPathSnapshotDirectory() const;
-    std::filesystem::path getKPathSnapshotPath(simtime_t interval) const;
+    std::filesystem::path getKPathSnapshotPath(simtime_t interval, bool reconnect = false) const;
     LeoIpv4 *getIpv4Module(int nodeId);
     void initializeKPathSnapshotConfiguration();
     void initializeKPathEndpointPairs();
@@ -137,9 +137,11 @@ protected:
     std::vector<leoRouting::KPathEndpointState> getConfiguredKPathEndpointStates() const;
     leoRouting::KShortestPathGroup computeCanonicalKShortestPathGroup(
         int32_t sourceEndpoint, int32_t destinationEndpoint) const;
-    void generateKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
-    void loadKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState);
-    void extendSavedCoreKPathGroups();
+    void generateKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState,
+                               bool reconnect = false);
+    void loadKPathSnapshot(simtime_t interval, const leoRouting::StableRouteState& routeState,
+                           bool reconnect = false);
+    void extendSavedCoreKPathGroups(bool onlyMissing = false);
     void applyFullRouteState(leoRouting::StableRouteState&& candidateState);
     void applyDeltaRouteState(const leoRouting::ParsedSnapshot& snapshot);
     void writeGeneratedRouteSnapshot(const leoRouting::StableRouteState& currentState,
@@ -164,6 +166,7 @@ public:
     void setReplayLastEndpointChangeTime(simtime_t originalTime) { replayLastEndpointChange = originalTime; }
     virtual void establishInitialISLs();
     virtual void updateForwardingStates(simtime_t currentInterval);
+    void refreshKPathsAfterReconnect();
     virtual void generateTopologyGraph(simtime_t currentInterval);
     virtual void clearGroundStationLinks();
     virtual void addNextHopInterface(cModule* source, cModule* destination, int interfaceID);

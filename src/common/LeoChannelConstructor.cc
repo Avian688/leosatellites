@@ -176,11 +176,17 @@ void LeoChannelConstructor::handleMessage(cMessage *msg)
         scheduleUpdate(false);
     }
     else if (msg == userTerminalHandoverTimer) {
-        const bool userTerminalLinksChanged = refreshUserTerminalLinks(false);
-        addPPPInterfaces();
-        if (userTerminalLinksChanged)
+        // Let a coincident topology tick publish the link and regular routes together.
+        if (updateTimer->isScheduled() && updateTimer->getArrivalTime() == simTime())
+            return;
+
+        if (completePendingUserTerminalHandovers()) {
+            addPPPInterfaces();
             finalizeUserTerminalLinks();
-        updateChannels();
+            configurator->refreshKPathsAfterReconnect();
+        }
+        publishNextUserTerminalHandoverTime();
+        scheduleUserTerminalHandoverTimer();
     }
     else if(msg == startManagerNode){
         setUpSimulation();
@@ -268,7 +274,7 @@ std::string LeoChannelConstructor::replaySignature() const
     out << std::setprecision(17) << numOfSats << ' ' << numOfGS << ' ' << numOfClients << ' '
         << numOfUserTerminals << ' ' << enableInterSatelliteLinks << ' ' << updateInterval << ' '
         << userTerminalUpdateInterval << ' ' << userTerminalSampleInterval << ' '
-        << userTerminalHandoverDowntime;
+        << userTerminalHandoverDowntime << " hard-handover-reconnect-v1";
     for (auto *norad : satelliteNoradModules) {
         out << ' ' << norad->getNedTypeName();
         for (int i = 0; i < norad->getNumParams(); ++i)
@@ -594,15 +600,19 @@ void LeoChannelConstructor::updateChannels()
         updateTimedLink(linkRecord);
     for (const auto& [key, activeLink] : activeGroundStationLinks)
         updateTimedLink(activeLink.linkRecord);
-    for (const auto& [userTerminalIndex, activeLink] : activeUserTerminalLinks) {
-        double delaySeconds = (activeLink.satelliteMobility->getDistance(activeLink.userTerminalMobility->getLUTPositionY(),
-                                                                        activeLink.userTerminalMobility->getLUTPositionX(),
-                                                                        0) * 1000.0) / 299792458.0;
-        activeLink.forwardChannel->setDelay(delaySeconds);
-        activeLink.forwardChannel->setDatarate(linkDataRate);
-        activeLink.reverseChannel->setDelay(delaySeconds);
-        activeLink.reverseChannel->setDatarate(linkDataRate);
-    }
+    for (const auto& [userTerminalIndex, activeLink] : activeUserTerminalLinks)
+        updateUserTerminalChannelDelay(activeLink);
+}
+
+void LeoChannelConstructor::updateUserTerminalChannelDelay(const ActiveUserTerminalLink& link)
+{
+    const double distanceKm = link.satelliteMobility->getDistance(link.userTerminalMobility->getLUTPositionY(),
+                                                                  link.userTerminalMobility->getLUTPositionX(), 0);
+    const double delaySeconds = distanceKm * 1000.0 / SPEED_OF_LIGHT_M_PER_S;
+    link.forwardChannel->setDelay(delaySeconds);
+    link.forwardChannel->setDatarate(linkDataRate);
+    link.reverseChannel->setDelay(delaySeconds);
+    link.reverseChannel->setDatarate(linkDataRate);
 }
 
 void LeoChannelConstructor::setUpGSLinks()
@@ -660,9 +670,9 @@ void LeoChannelConstructor::publishNextUserTerminalHandoverTime()
         auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
         if (activeLinkIt != activeUserTerminalLinks.end()) {
             const int currentSatellite = activeLinkIt->second.satelliteIndex;
-            const int selectedSatellite = selectServingSatelliteForUserTerminalAt(userTerminalIndex, nextUserTerminalUpdate);
-            if (selectedSatellite >= 0 && selectedSatellite != currentSatellite &&
-                isUserTerminalSatelliteReachableAtTime(userTerminalIndex, selectedSatellite, nextUserTerminalUpdate))
+            if (isUserTerminalSatelliteReachableAtTime(userTerminalIndex, currentSatellite, nextUserTerminalUpdate) ||
+                isUserTerminalSatelliteReachableAtTime(userTerminalIndex,
+                    selectServingSatelliteForUserTerminalAt(userTerminalIndex, nextUserTerminalUpdate), nextUserTerminalUpdate))
                 nextHandoverStartTime = nextUserTerminalUpdate;
         }
         handoverOracle->setNextHandoverStartTime(userTerminalIndex, nextHandoverStartTime);
@@ -696,7 +706,6 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
         const int oldSatelliteIndex = activeLinkIt->second.satelliteIndex;
         removeUserTerminalLink(userTerminalIndex, activeLinkIt->second);
         activeUserTerminalLinks.erase(activeLinkIt);
-        cancelPendingUserTerminalHandover(userTerminalIndex);
         endpointTopologyChanged = true;
         return oldSatelliteIndex;
     };
@@ -707,7 +716,12 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
         pendingHandover.oldSatelliteIndex = oldSatelliteIndex;
         pendingHandover.startTime = simTime();
         pendingHandover.targetSatelliteIndex = targetSatelliteIndex;
-        pendingHandover.reconnectTime = simTime() + computeUserTerminalHandoverDowntime(userTerminalIndex, oldSatelliteIndex, targetSatelliteIndex);
+        const simtime_t readyAt = simTime() + computeUserTerminalHandoverDowntime(userTerminalIndex, oldSatelliteIndex, targetSatelliteIndex);
+        // Route snapshot timestamps have microsecond precision. Round up so
+        // the link stays down for at least the modeled handover delay.
+        pendingHandover.reconnectTime = readyAt.trunc(SIMTIME_US);
+        if (pendingHandover.reconnectTime < readyAt || pendingHandover.reconnectTime == simTime())
+            pendingHandover.reconnectTime += SimTime(1, SIMTIME_US);
         pendingUserTerminalHandovers[userTerminalIndex] = pendingHandover;
         markHardHandoverStarted(userTerminalIndex, oldSatelliteIndex, targetSatelliteIndex, pendingHandover.reconnectTime);
     };
@@ -753,44 +767,24 @@ bool LeoChannelConstructor::refreshUserTerminalLinks(bool forceUpdate)
 
     if (userTerminalUpdateInterval > SIMTIME_ZERO && simTime() >= nextUserTerminalUpdate) {
         for (int userTerminalIndex = 0; userTerminalIndex < numOfUserTerminals; userTerminalIndex++) {
-            const int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
             auto activeLinkIt = activeUserTerminalLinks.find(userTerminalIndex);
-            const int currentSatellite = activeLinkIt != activeUserTerminalLinks.end() ? activeLinkIt->second.satelliteIndex : -1;
-            const bool currentReachableNow = isUserTerminalSatelliteReachableNow(userTerminalIndex, currentSatellite);
-            const bool selectedReachableNow = isUserTerminalSatelliteReachableNow(userTerminalIndex, selectedSatellite);
-
-            if (activeLinkIt != activeUserTerminalLinks.end()) {
-                // Keep using a healthy serving satellite until an immediate
-                // replacement exists. Otherwise the polling interval can create
-                // multi-second blackouts on its own.
-                if ((selectedSatellite < 0 || !selectedReachableNow) && currentReachableNow) {
-                    cancelPendingUserTerminalHandover(userTerminalIndex);
-                    continue;
-                }
-
-                if (selectedSatellite == currentSatellite) {
-                    cancelPendingUserTerminalHandover(userTerminalIndex);
-                    continue;
-                }
-
-                removeActiveUserTerminalLink(userTerminalIndex, activeLinkIt);
-            }
-
-            if (selectedSatellite >= 0 && selectedReachableNow) {
-                schedulePendingHandover(userTerminalIndex, currentSatellite, selectedSatellite);
-            }
-            else {
-                cancelPendingUserTerminalHandover(userTerminalIndex);
-            }
+            if (activeLinkIt == activeUserTerminalLinks.end() || pendingUserTerminalHandovers.count(userTerminalIndex))
+                continue;
+            const int currentSatellite = activeLinkIt->second.satelliteIndex;
+            int selectedSatellite = selectServingSatelliteForUserTerminal(userTerminalIndex);
+            if (!isUserTerminalSatelliteReachableNow(userTerminalIndex, selectedSatellite))
+                selectedSatellite = currentSatellite;
+            // The scheduled check includes a hard break even when the
+            // serving satellite is selected again.
+            removeActiveUserTerminalLink(userTerminalIndex, activeLinkIt);
+            schedulePendingHandover(userTerminalIndex, currentSatellite, selectedSatellite);
         }
 
         while (nextUserTerminalUpdate <= simTime())
             nextUserTerminalUpdate += userTerminalUpdateInterval;
-
-        publishNextUserTerminalHandoverTime();
     }
 
-    linksReadyToFinalize = completePendingUserTerminalHandovers() || linksReadyToFinalize;
+    linksReadyToFinalize = completePendingUserTerminalHandovers();
     publishNextUserTerminalHandoverTime();
     scheduleUserTerminalHandoverTimer();
 
@@ -809,8 +803,7 @@ bool LeoChannelConstructor::completePendingUserTerminalHandovers()
         if (pendingHandover.reconnectTime > simTime())
             continue;
 
-        if (pendingHandover.targetSatelliteIndex >= 0 &&
-            isUserTerminalSatelliteReachableNow(userTerminalIndex, pendingHandover.targetSatelliteIndex)) {
+        if (isUserTerminalSatelliteReachableNow(userTerminalIndex, pendingHandover.targetSatelliteIndex)) {
             createUserTerminalLink(userTerminalIndex, pendingHandover.targetSatelliteIndex);
             linksChanged = true;
         }
@@ -1098,6 +1091,7 @@ void LeoChannelConstructor::createUserTerminalLink(int userTerminalIndex, int sa
     activeLink.reverseChannel = check_and_cast<cDatarateChannel *>(outGateUserTerminal->getChannel());
     activeLink.satelliteIndex = satNum;
     activeLink.userTerminalIndex = userTerminalIndex;
+    updateUserTerminalChannelDelay(activeLink);
 
     dirtyPppModules.insert(satModule);
     dirtyPppModules.insert(userTerminalModule);

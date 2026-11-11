@@ -133,6 +133,7 @@ protected:
     simtime_t computeUserTerminalHandoverDowntime(int userTerminalIndex, int oldSatelliteIndex, int newSatelliteIndex) const;
     void createUserTerminalLink(int userTerminalIndex, int satNum);
     void removeUserTerminalLink(int userTerminalIndex, ActiveUserTerminalLink& link);
+    void updateUserTerminalChannelDelay(const ActiveUserTerminalLink& link);
     void finalizeUserTerminalLinks();
     bool completePendingUserTerminalHandovers();
     void scheduleUserTerminalHandoverTimer();
